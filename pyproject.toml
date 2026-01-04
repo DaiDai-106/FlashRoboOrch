@@ -6,7 +6,16 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "flash-models",
+    "viser==1.0.16",
+    "yourdfpy==0.0.58",
 ]
 
 [tool.uv.sources]
 flash-models = { git = "ssh://git@gitlab.roboticplus.com/flash/flashdata.git", rev = "f41b4d9f" }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/robots_orchestra"]
