@@ -1,0 +1,12 @@
+[project]
+name = "flashroboorch"
+version = "0.1.0"
+description = "( Robot Orchestra, 机器人像乐队一样协作) 包含协作机器人, 人形双臂机器人和工业机器人的多机器人编排演示demo，机器人执行同步操作以实现具体长任务。"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "flash-models",
+]
+
+[tool.uv.sources]
+flash-models = { git = "ssh://git@gitlab.roboticplus.com/flash/flashdata.git", rev = "f41b4d9f" }
