@@ -1,10 +1,9 @@
 import viser
 import time
 import numpy as np
-from typing import Dict
+from typing import Dict, Any
 from robots_orchestra.viz.viser import ViserUI
 from viser.extras import ViserUrdf
-from typing import Dict, Optional, Any
 from yourdfpy import URDF
 
 # 用户绘画, 负责存每个用户私有的东西
