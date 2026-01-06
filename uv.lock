@@ -172,6 +172,7 @@ dependencies = [
     { name = "numpy" },
     { name = "uvicorn" },
     { name = "viser" },
+    { name = "websockets" },
     { name = "yourdfpy" },
 ]
 
@@ -183,6 +184,7 @@ requires-dist = [
     { name = "numpy", specifier = "==2.2.6" },
     { name = "uvicorn", specifier = "==0.38" },
     { name = "viser", specifier = "==1.0.16" },
+    { name = "websockets", specifier = ">=12.0" },
     { name = "yourdfpy", specifier = "==0.0.58" },
 ]
 

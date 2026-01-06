@@ -26,8 +26,6 @@ class Controller:
         def on_urdf_upload(event: viser.GuiEvent[viser.GuiUploadButtonHandle]):
             self.handle_upload_urdf(event)
 
-
-
     #----- UI 事件处理 ------------------------------------------------------------
 
     # 新用户进来，给他开个户 (Session)
