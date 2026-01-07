@@ -1,12 +1,15 @@
 import viser
 import time
+import json
 import numpy as np
 import ampl
+from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 from robots_orchestra.viz.viser import ViserUI
 from viser.extras import ViserUrdf
 from yourdfpy import URDF
 from robots_orchestra.planner.ik_solver import IKSolver
+from robots_orchestra import SCENE_DIR
 
 # 用户会话，负责管理每个用户的所有私有资源
 class UserSession:
@@ -19,6 +22,10 @@ class UserSession:
         # 存储该用户的所有机器人URDF可视化对象
         self.robots: Dict[str, Any] = {}
         
+        # 存储该用户每个机器人的base frame（用于设置位置）
+        # 结构: {robot_name: frame_handle}
+        self.robot_frames: Dict[str, Any] = {}
+        
         # 存储该用户每个机器人的关节slider控件
         # 结构: {robot_name: {folder, sliders, actuated_joints}}
         self.robot_sliders: Dict[str, Dict[str, Any]] = {}
@@ -29,6 +36,35 @@ class UserSession:
         
         # 存储该用户的IK求解器（按机器人名称）
         self.ik_solvers: Dict[str, IKSolver] = {}
+        
+        # 加载机器人位置配置
+        self.robot_config = self._load_robot_config()
+
+    def _load_robot_config(self) -> Dict[str, Any]:
+        """加载机器人位置配置文件"""
+        config_path = SCENE_DIR / "config.json"
+        try:
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    return config.get("robot_positions", {})
+        except Exception as e:
+            print(f"加载机器人配置文件时出错: {e}")
+        return {}
+    
+    def get_robot_position(self, robot_name: str) -> tuple:
+        """获取机器人的位置和旋转配置
+        
+        Returns:
+            (position, rotation) 元组，position是(x, y, z)，rotation是四元数(w, x, y, z)
+        """
+        if robot_name in self.robot_config:
+            config = self.robot_config[robot_name]
+            position = tuple(config.get("position", [0.0, 0.0, 0.0]))
+            rotation = tuple(config.get("rotation", [1.0, 0.0, 0.0, 0.0]))  # 默认无旋转
+            return position, rotation
+        # 默认位置
+        return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)
 
     def add_urdf(self, urdf: URDF, on_slider_change: Optional[Callable[[str, np.ndarray], None]] = None):
         """添加URDF机器人并创建相关控件
@@ -41,8 +77,21 @@ class UserSession:
         if robot_name in self.robots:
             self.remove_urdf(robot_name)
 
-        # 使用用户特定的命名空间
-        root_node_name = f"{self.namespace}/base_link_{robot_name}"
+        # 获取机器人位置配置
+        position, rotation = self.get_robot_position(robot_name)
+        
+        # 创建机器人的base frame（用于设置位置）
+        frame_name = f"{self.namespace}/robot_frame_{robot_name}"
+        robot_frame = self.ui.server.scene.add_frame(
+            name=frame_name,
+            show_axes=False,  # 不显示坐标轴
+            position=position,
+            wxyz=rotation,  # 四元数 (w, x, y, z)
+        )
+
+        self.robot_frames[robot_name] = robot_frame
+        # 使用frame作为root节点
+        root_node_name = f"{frame_name}/base_link_{robot_name}"
         viser_urdf_handle = ViserUrdf(
             self.ui.server, 
             urdf, 
@@ -77,15 +126,21 @@ class UserSession:
             self.remove_robot_sliders(robot_name)
         
         # 移除URDF可视化场景节点
-        viser_urdf_handle = self.robots[robot_name]
-        root_node_name = f"{self.namespace}/base_link_{robot_name}"
+        frame_name = f"{self.namespace}/robot_frame_{robot_name}"
+        root_node_name = f"{frame_name}/base_link_{robot_name}"
         try:
             # 删除场景节点（这会删除整个URDF树）
             self.ui.server.scene.remove_by_name(root_node_name)
+            # 删除frame（这会删除frame及其所有子节点）
+            self.ui.server.scene.remove_by_name(frame_name)
         except Exception as e:
             print(f"删除URDF场景节点时出错: {e}")
         
         del self.robots[robot_name]
+        
+        # 删除frame引用
+        if robot_name in self.robot_frames:
+            del self.robot_frames[robot_name]
         
         # 清理IK求解器
         if robot_name in self.ik_solvers:
@@ -218,12 +273,40 @@ class UserSession:
             end_effector_link = urdf.robot.links[-1]
             urdf.update_cfg(joint_config)
             
-            # 获取末端执行器的变换矩阵
-            tf = urdf.get_transform(end_effector_link.name)
-            tf = np.array(tf, dtype=np.float64, order='C', copy=True)
-            position = tf[:3, 3]
-            qt7 = ampl.tf44_to_qt7(tf)
-            quaternion = (qt7[0], qt7[1], qt7[2], qt7[3])
+            # 获取末端执行器的局部变换矩阵（相对于URDF base_link）
+            tf_local = urdf.get_transform(end_effector_link.name)
+            tf_local = np.array(tf_local, dtype=np.float64, order='C', copy=True)
+            
+            # 获取机器人的base节点在世界坐标系下的位置和旋转
+            # robot_frame 就是 base 节点在世界坐标系中的位置
+            if robot_name in self.robot_frames:
+                robot_frame = self.robot_frames[robot_name]
+                frame_position = np.array(robot_frame.position, dtype=np.float64)
+                frame_quaternion = np.array(robot_frame.wxyz, dtype=np.float64)  # (w, x, y, z)
+                print(f"frame_position: {frame_position}, frame_quaternion: {frame_quaternion}")
+                
+                # 将frame的四元数转换为变换矩阵
+                qt7_frame = np.array([
+                    frame_quaternion[1],  # qx
+                    frame_quaternion[2],  # qy
+                    frame_quaternion[3],  # qz
+                    frame_quaternion[0],  # qw
+                    frame_position[0],     # x
+                    frame_position[1],     # y
+                    frame_position[2]      # z
+                ], dtype=np.float64)
+
+                tf_frame = ampl.qt7_to_tf44(qt7_frame)
+                # 将局部变换转换为世界坐标：world_tf = frame_tf @ local_tf
+                tf_world = tf_frame @ tf_local
+            else:
+                # 如果没有frame，使用局部变换
+                tf_world = tf_local
+            
+            # 提取世界坐标下的位置和旋转
+            position = tf_world[:3, 3]
+            qt7 = ampl.tf44_to_qt7(tf_world)
+            quaternion = (qt7[0], qt7[1], qt7[2], qt7[3])  # 转换为 (w, x, y, z) 格式
 
             # 初始化IK求解器
             if robot_name not in self.ik_solvers:
@@ -266,22 +349,73 @@ class UserSession:
                 """当用户拖动轨道工具时，进行逆解求解并更新机械臂可视化"""
                 try:
                     new_position = event.target.position
-                    new_rotation = event.target.wxyz
+                    new_rotation = event.target.wxyz  # (w, x, y, z)
                     
                     robot_info = self.end_effector_controls[robot_name]
                     ik_solver = robot_info["ik_solver"]
                     current_joint_config = robot_info["current_joint_config"]
                     viser_urdf_handle = self.robots[robot_name]
                     
-                    target_frame = [
-                        float(new_rotation[0]),  # qw
-                        float(new_rotation[1]),  # qx
-                        float(new_rotation[2]),  # qy
-                        float(new_rotation[3]),  # qz
-                        float(new_position[0]),  # x
-                        float(new_position[1]),  # y
-                        float(new_position[2]),  # z
-                    ]
+                    # 将世界坐标转换为局部坐标（相对于机器人base_link）
+                    if robot_name in self.robot_frames:
+                        # 通过robot_frame直接获取base节点在世界坐标系下的位置和旋转
+                        robot_frame = self.robot_frames[robot_name]
+                        frame_position = np.array(robot_frame.position, dtype=np.float64)
+                        frame_quaternion = np.array(robot_frame.wxyz, dtype=np.float64)  # (w, x, y, z)
+                        
+                        # 构建frame的变换矩阵（base节点在世界坐标系下的变换）
+                        # ampl的qt7格式是 (qx, qy, qz, qw, x, y, z)
+                        qt7_frame = np.array([
+                            frame_quaternion[1],  # qw
+                            frame_quaternion[2],  # qx
+                            frame_quaternion[3],  # qy
+                            frame_quaternion[0],  # qz
+                            frame_position[0],     # x
+                            frame_position[1],     # y
+                            frame_position[2]      # z
+                        ], dtype=np.float64)
+                        tf_frame = ampl.qt7_to_tf44(qt7_frame)
+                        
+                        # 构建目标位置的世界坐标变换矩阵
+                        qt7_world = np.array([
+                            new_rotation[1],  # qw
+                            new_rotation[2],  # qx
+                            new_rotation[3],  # qy
+                            new_rotation[0],  # qz
+                            new_position[0],  # x
+                            new_position[1],  # y
+                            new_position[2]   # z
+                        ], dtype=np.float64)
+                        tf_world = ampl.qt7_to_tf44(qt7_world)
+                        
+                        # 转换为局部坐标：local_tf = inv(frame_tf) @ world_tf
+                        tf_frame_inv = np.linalg.inv(tf_frame)
+                        tf_local = tf_frame_inv @ tf_world
+                        
+                        # 提取局部坐标
+                        qt7_local = ampl.tf44_to_qt7(tf_local)
+                        
+                        # ampl的qt7格式是 (qw, qx, qy, qz, x, y, z)
+                        target_frame = [
+                            float(qt7_local[0]),  # qw
+                            float(qt7_local[1]),  # qx
+                            float(qt7_local[2]),  # qy
+                            float(qt7_local[3]),  # qz
+                            float(qt7_local[4]),  # x
+                            float(qt7_local[5]),  # y
+                            float(qt7_local[6])   # z
+                        ]
+                    else:
+                        # 如果没有frame，直接使用世界坐标（假设frame在原点）
+                        target_frame = [
+                            float(new_rotation[0]),  # qw
+                            float(new_rotation[1]),  # qx
+                            float(new_rotation[2]),  # qy
+                            float(new_rotation[3]),  # qz
+                            float(new_position[0]),  # x
+                            float(new_position[1]),  # y
+                            float(new_position[2])   # z
+                        ]
                     
                     # 调用逆解求解
                     solutions = ik_solver.solve(

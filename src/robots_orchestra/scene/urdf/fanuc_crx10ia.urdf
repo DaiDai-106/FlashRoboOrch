@@ -16,14 +16,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/visual/base_link.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/visual/base_link.ply"/>
       </geometry>
       <material name="black"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/convex/base_link.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/convex/base_link.ply"/>
       </geometry>
     </collision>
   </link>
@@ -31,14 +31,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/visual/link_1.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/visual/link_1.ply"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/convex/link_1.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/convex/link_1.ply"/>
       </geometry>
     </collision>
   </link>
@@ -46,14 +46,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/visual/link_2.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/visual/link_2.ply"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/convex/link_2.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/convex/link_2.ply"/>
       </geometry>
     </collision>
   </link>
@@ -61,14 +61,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/visual/link_3.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/visual/link_3.ply"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/convex/link_3.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/convex/link_3.ply"/>
       </geometry>
     </collision>
   </link>
@@ -76,14 +76,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/visual/link_4.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/visual/link_4.ply"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/convex/link_4.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/convex/link_4.ply"/>
       </geometry>
     </collision>
   </link>
@@ -91,14 +91,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/visual/link_5.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/visual/link_5.ply"/>
       </geometry>
       <material name="white"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/convex/link_5.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/convex/link_5.ply"/>
       </geometry>
     </collision>
   </link>
@@ -106,14 +106,14 @@
     <visual>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/visual/link_6.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/visual/link_6.ply"/>
       </geometry>
       <material name="black"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-        <mesh filename="meshes/convex/link_6.ply"/>
+        <mesh filename="meshes/fanuc_crx10ia/convex/link_6.ply"/>
       </geometry>
     </collision>
   </link>

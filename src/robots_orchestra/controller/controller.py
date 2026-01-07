@@ -81,8 +81,6 @@ class Controller:
                         print(f"用户 {client.client_id} 的机器人 {robot_name} 关节配置已更新")
                 except Exception as e:
                     print(f"更新机器人关节配置时出错: {e}")
-                    import traceback
-                    traceback.print_exc()
             
             # 委托给UserSession处理（它会创建所有相关资源）
             session.add_urdf(urdf, on_slider_change=on_slider_change)

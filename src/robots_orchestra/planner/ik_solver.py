@@ -30,6 +30,9 @@ class IKSolver:
             use_iter = False
             if iter_rate is not None and iter_number is not None and iter_number > 0:
                 use_iter = True
+
+            if self.robot_type != "fanuc_crx10ia":
+                use_iter = False
             
             if use_iter:
                 iter_rate = np.array(iter_rate, dtype=np.float64)
@@ -46,5 +49,8 @@ class IKSolver:
         if self.robot_type == "fanuc_crx10ia":
             self.dof = 6
             self.solver = ampl.ArmBase("fanuc_crx10ia", ampl.ArmType.CRX6, 6)
+        elif self.robot_type == "abb_irb6700_150_320":
+            self.dof = 6
+            self.solver = ampl.ArmBase("abb_irb6700_150_320", ampl.ArmType.Industrial6, 6)
         else:
             raise ValueError(f"Unsupport robot type: {self.robot_type}")
