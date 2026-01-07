@@ -1,8 +1,5 @@
 import viser
 import time
-from typing import List, Dict, Any
-from pathlib import Path
-import numpy as np
 import ampl
 from robots_orchestra import SCENE_DIR
 
@@ -47,6 +44,8 @@ class ViserUI:
                 "上传 URDF",
                 mime_type="application/xml,text/xml,.urdf"  # 限制上传类型为 URDF
             )
+            # 创建"机器人拖动"文件夹，用于显示每个机器人的关节slider
+            self.robot_drag_folder = self.server.gui.add_folder("机器人拖动")
 
     def initialize_process(self):
         with self.server.gui.add_folder("长任务执行单元"):
@@ -88,6 +87,7 @@ class ViserUI:
             print(f"成功加载实验室点云: {ply_path}")
         except Exception as e:
             print(f"加载实验室点云时出错: {e}")
+
 
     @staticmethod
     def run():
