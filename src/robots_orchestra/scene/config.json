@@ -1,13 +1,45 @@
 {
-  "robot_positions": {
-    "abb_irb6700_150_320": {
-      "position": [0.0, 0.0, 0.0],
-      "rotation": [1.0, 0.0, 0.0, 0.0]
+    "robot_positions": {
+        "abb_irb6700_150_320": {
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "rotation": [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        "fanuc_crx10ia": {
+            "position": [
+                3.5,
+                1.5,
+                0.6
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+            ]
+        }
     },
-    "fanuc_crx10ia": {
-      "position": [3.5, 1.5, 0.6],
-      "rotation": [0.0, 0.0, 0.0, 1.0]
+    "objects": {
+        "steel_frame": {
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "rotation": [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
     }
-  }
 }
-

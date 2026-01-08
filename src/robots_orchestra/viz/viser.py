@@ -17,8 +17,8 @@ class ViserUI:
         # 添加默认网格 (grid) - XY 平面，适合机器人场景
         self.server.scene.add_grid(
             name="/world",
-            width=10.0,
-            height=10.0,
+            width=14.0,
+            height=14.0,
             plane="xy",  # XY 平面，Z 轴向上
             cell_size=0.5,
             section_size=1.0,
