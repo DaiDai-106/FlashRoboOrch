@@ -38,9 +38,9 @@ class UserSession:
         self.ik_solvers: Dict[str, IKSolver] = {}
         
         # 加载机器人位置配置
-        self.robot_config = self._load_robot_config()
+        self.robot_config = self.load_robot_config()
 
-    def _load_robot_config(self) -> Dict[str, Any]:
+    def load_robot_config(self) -> Dict[str, Any]:
         """加载机器人位置配置文件"""
         config_path = SCENE_DIR / "config.json"
         try:
@@ -273,41 +273,6 @@ class UserSession:
             end_effector_link = urdf.robot.links[-1]
             urdf.update_cfg(joint_config)
             
-            # 获取末端执行器的局部变换矩阵（相对于URDF base_link）
-            tf_local = urdf.get_transform(end_effector_link.name)
-            tf_local = np.array(tf_local, dtype=np.float64, order='C', copy=True)
-            
-            # 获取机器人的base节点在世界坐标系下的位置和旋转
-            # robot_frame 就是 base 节点在世界坐标系中的位置
-            if robot_name in self.robot_frames:
-                robot_frame = self.robot_frames[robot_name]
-                frame_position = np.array(robot_frame.position, dtype=np.float64)
-                frame_quaternion = np.array(robot_frame.wxyz, dtype=np.float64)  # (w, x, y, z)
-                print(f"frame_position: {frame_position}, frame_quaternion: {frame_quaternion}")
-                
-                # 将frame的四元数转换为变换矩阵
-                qt7_frame = np.array([
-                    frame_quaternion[1],  # qx
-                    frame_quaternion[2],  # qy
-                    frame_quaternion[3],  # qz
-                    frame_quaternion[0],  # qw
-                    frame_position[0],     # x
-                    frame_position[1],     # y
-                    frame_position[2]      # z
-                ], dtype=np.float64)
-
-                tf_frame = ampl.qt7_to_tf44(qt7_frame)
-                # 将局部变换转换为世界坐标：world_tf = frame_tf @ local_tf
-                tf_world = tf_frame @ tf_local
-            else:
-                # 如果没有frame，使用局部变换
-                tf_world = tf_local
-            
-            # 提取世界坐标下的位置和旋转
-            position = tf_world[:3, 3]
-            qt7 = ampl.tf44_to_qt7(tf_world)
-            quaternion = (qt7[0], qt7[1], qt7[2], qt7[3])  # 转换为 (w, x, y, z) 格式
-
             # 初始化IK求解器
             if robot_name not in self.ik_solvers:
                 try:
@@ -319,14 +284,35 @@ class UserSession:
             
             ik_solver = self.ik_solvers[robot_name]
 
-            # 使用用户特定的命名空间
-            controls_name = f"{self.namespace}/end_effector_orbit_{robot_name}"
+            # 构建末端执行器链接对应的场景节点名称
+            # ViserUrdf 使用 {root_node_name}/visual/{link_path} 格式来创建 mesh 节点
+            frame_name = f"{self.namespace}/robot_frame_{robot_name}"
+            root_node_name = f"{frame_name}/base_link_{robot_name}"
             
-            # 添加交互式变换控件
+            # 使用与 ViserUrdf 相同的逻辑构建末端执行器链接的节点名称
+            # 直接使用末端执行器链接的 mesh 节点作为父节点
+            if urdf.scene is not None:
+                from viser.extras._urdf import _viser_name_from_frame
+                # 使用 ViserUrdf 的内部函数来构建节点名称
+                prefixed_root = f"{root_node_name}/visual"
+                end_effector_node_name = _viser_name_from_frame(
+                    urdf.scene,
+                    end_effector_link.name,
+                    prefixed_root
+                )
+            else:
+                # 如果没有scene，使用简单的名称
+                end_effector_node_name = f"{root_node_name}/visual/{end_effector_link.name}"
+            
+            # 将轨道工具添加到末端执行器链接的mesh节点下（作为子节点）
+            controls_name = f"{end_effector_node_name}/orbit_controls"
+            
+            # 添加交互式变换控件，作为末端执行器链接的子节点
+            # 使用单位变换（轨道工具就在末端执行器位置）
             controls_handle = self.ui.server.scene.add_transform_controls(
                 name=controls_name,
-                position=position,
-                wxyz=quaternion,
+                position=(0.0, 0.0, 0.0),  # 相对于父节点的位置（原点）
+                wxyz=(1.0, 0.0, 0.0, 0.0),  # 无旋转（单位四元数）
                 scale=0.5,
                 visible=True,
                 disable_axes=False,
@@ -348,74 +334,51 @@ class UserSession:
             def on_controls_update(event: viser.TransformControlsEvent):
                 """当用户拖动轨道工具时，进行逆解求解并更新机械臂可视化"""
                 try:
-                    new_position = event.target.position
-                    new_rotation = event.target.wxyz  # (w, x, y, z)
+                    # 轨道工具现在是末端执行器链接的子节点
+                    # new_position 和 new_rotation 是相对于末端执行器链接的
+                    new_position_rel = event.target.position
+                    new_rotation_rel = event.target.wxyz  # (w, x, y, z)
                     
                     robot_info = self.end_effector_controls[robot_name]
                     ik_solver = robot_info["ik_solver"]
                     current_joint_config = robot_info["current_joint_config"]
                     viser_urdf_handle = self.robots[robot_name]
                     
-                    # 将世界坐标转换为局部坐标（相对于机器人base_link）
-                    if robot_name in self.robot_frames:
-                        # 通过robot_frame直接获取base节点在世界坐标系下的位置和旋转
-                        robot_frame = self.robot_frames[robot_name]
-                        frame_position = np.array(robot_frame.position, dtype=np.float64)
-                        frame_quaternion = np.array(robot_frame.wxyz, dtype=np.float64)  # (w, x, y, z)
-                        
-                        # 构建frame的变换矩阵（base节点在世界坐标系下的变换）
-                        # ampl的qt7格式是 (qx, qy, qz, qw, x, y, z)
-                        qt7_frame = np.array([
-                            frame_quaternion[1],  # qw
-                            frame_quaternion[2],  # qx
-                            frame_quaternion[3],  # qy
-                            frame_quaternion[0],  # qz
-                            frame_position[0],     # x
-                            frame_position[1],     # y
-                            frame_position[2]      # z
-                        ], dtype=np.float64)
-                        tf_frame = ampl.qt7_to_tf44(qt7_frame)
-                        
-                        # 构建目标位置的世界坐标变换矩阵
-                        qt7_world = np.array([
-                            new_rotation[1],  # qw
-                            new_rotation[2],  # qx
-                            new_rotation[3],  # qy
-                            new_rotation[0],  # qz
-                            new_position[0],  # x
-                            new_position[1],  # y
-                            new_position[2]   # z
-                        ], dtype=np.float64)
-                        tf_world = ampl.qt7_to_tf44(qt7_world)
-                        
-                        # 转换为局部坐标：local_tf = inv(frame_tf) @ world_tf
-                        tf_frame_inv = np.linalg.inv(tf_frame)
-                        tf_local = tf_frame_inv @ tf_world
-                        
-                        # 提取局部坐标
-                        qt7_local = ampl.tf44_to_qt7(tf_local)
-                        
-                        # ampl的qt7格式是 (qw, qx, qy, qz, x, y, z)
-                        target_frame = [
-                            float(qt7_local[0]),  # qw
-                            float(qt7_local[1]),  # qx
-                            float(qt7_local[2]),  # qy
-                            float(qt7_local[3]),  # qz
-                            float(qt7_local[4]),  # x
-                            float(qt7_local[5]),  # y
-                            float(qt7_local[6])   # z
-                        ]
-                    else:
-                        # 如果没有frame，直接使用世界坐标（假设frame在原点）
-                        target_frame = [
-                            float(new_rotation[0]),  # qw
-                            float(new_rotation[1]),  # qx
-                            float(new_rotation[2]),  # qy
-                            float(new_rotation[3]),  # qz
-                            float(new_position[0]),  # x
-                            float(new_position[1]),  # y
-                            float(new_position[2])   # z
-                        ]
+                    # 获取末端执行器链接当前的变换（相对于base_link）
+                    urdf.update_cfg(current_joint_config)
+                    tf_end_effector_local = urdf.get_transform(end_effector_link.name)
+                    tf_end_effector_local = np.array(tf_end_effector_local, dtype=np.float64, order='C', copy=True)
+                    
+                    # 构建轨道工具相对于末端执行器链接的变换矩阵
+                    # new_rotation_rel 是 (w, x, y, z) 格式，需要转换为 ampl 的 qt7 格式
+                    qt7_controls_rel = np.array([
+                        new_rotation_rel[1],  # qx
+                        new_rotation_rel[2],  # qy
+                        new_rotation_rel[3],  # qz
+                        new_rotation_rel[0],  # qw
+                        new_position_rel[0],  # x
+                        new_position_rel[1],  # y
+                        new_position_rel[2]   # z
+                    ], dtype=np.float64)
+                    tf_controls_rel = ampl.qt7_to_tf44(qt7_controls_rel)
+                    
+                    # 计算轨道工具相对于base_link的绝对变换
+                    # absolute_tf = end_effector_tf @ controls_rel_tf
+                    tf_target_local = tf_end_effector_local @ tf_controls_rel
+                    
+                    # 提取相对于base_link的局部坐标
+                    qt7_target = ampl.tf44_to_qt7(tf_target_local)
+                    # ampl的qt7格式是 (qx, qy, qz, qw, x, y, z)
+                    # IK求解器需要的格式是 (qx, qy, qz, qw, x, y, z)
+                    target_frame = [
+                        float(qt7_target[0]),  # qx
+                        float(qt7_target[1]),  # qy
+                        float(qt7_target[2]),  # qz
+                        float(qt7_target[3]),  # qw
+                        float(qt7_target[4]),  # x
+                        float(qt7_target[5]),  # y
+                        float(qt7_target[6])   # z
+                    ]
                     
                     # 调用逆解求解
                     solutions = ik_solver.solve(

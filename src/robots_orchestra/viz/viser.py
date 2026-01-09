@@ -47,6 +47,7 @@ class ViserUI:
             # 创建"机器人拖动"文件夹，用于显示每个机器人的关节slider
             self.robot_drag_folder = self.server.gui.add_folder("机器人拖动")
 
+    """长任务执行单元, 目前只是测试， 后续应该会尽可能的罗列出所有子任务"""
     def initialize_process(self):
         with self.server.gui.add_folder("长任务执行单元"):
             with self.server.gui.add_folder("ABB 框架移动任务"):
@@ -78,7 +79,7 @@ class ViserUI:
             
             # 将点云添加到viser场景
             self.server.scene.add_point_cloud(
-                name="/world/rolab_world",
+                name="/world/origin/rolab_world",
                 points=pcd_v,
                 colors=pcd_c,
                 point_size=0.015,  # 点的大小
