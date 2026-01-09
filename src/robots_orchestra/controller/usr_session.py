@@ -389,7 +389,7 @@ class UserSession:
                     )
                     
                     if solutions is not None and len(solutions) > 0:
-                        new_joint_config = np.array(solutions[0], dtype=np.float64)
+                        new_joint_config = np.array(solutions[0], dtype=np.float64)  # TODO 这个地方对于逆解的选取可能需要有些说法 
                         viser_urdf_handle.update_cfg(new_joint_config)
                         robot_info["current_joint_config"] = new_joint_config
                         print(f"用户 {self.client.client_id} 的机器人 {robot_name} 逆解成功")

@@ -41,7 +41,13 @@ class IKSolver:
             else:
                 status = self.solver.ik(end_pose, sols) 
 
-        return sols.tolist()
+
+            sols = sols.tolist()
+            if self.robot_type == "abb_irb6700_150_320":
+                if len(sols) >= 2:
+                    sols[0], sols[2] = sols[2], sols[0]
+
+        return sols
 
     
     # 根据不同的类型对逆解服务进行初始化
