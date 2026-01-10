@@ -367,6 +367,7 @@ class Marvin_Robot:
             self.robot = ctypes.CDLL(os.path.join(current_path, "libMarvinSDK.dylib"))
         else:  # Linux and other Unix-like systems
             self.robot = ctypes.CDLL(os.path.join(current_path, "lib/libMarvinSDK.so"))
+
         self.ErrorCode = None
         self.a_pvt_path = None
         self.b_pvt_path = None
