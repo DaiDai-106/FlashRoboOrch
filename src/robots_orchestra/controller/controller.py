@@ -1,5 +1,6 @@
 import viser
 import os
+import json
 import numpy as np
 from yourdfpy import URDF
 from typing import Dict
@@ -23,16 +24,16 @@ class Controller:
         def _(client: viser.ClientHandle):
             self.handle_disconnect(client)
 
-        @self.ui.btn_upload.on_upload
-        def on_urdf_upload(event: viser.GuiEvent[viser.GuiUploadButtonHandle]):
-            self.handle_upload_urdf(event)
+        # 不再使用全局按钮，改为在UserSession中为每个用户创建独立按钮
 
     #----- UI 事件处理 ------------------------------------------------------------
 
     def handle_connect(self, client: viser.ClientHandle):
         """处理客户端连接事件"""
         print(f"用户 {client.client_id} 上线")
-        self.sessions[client] = UserSession(client, self.ui)
+        session = UserSession(client, self.ui)
+        self.sessions[client] = session
+        self.setup_user_button_handlers(session) # 为当前用户设置按钮事件处理
 
     def handle_disconnect(self, client: viser.ClientHandle):
         """处理客户端断开事件"""
@@ -49,27 +50,29 @@ class Controller:
         client.camera.look_at = (0.0, 0.0, 0.0)
         client.camera.up_direction = (0.0, 0.0, 1.0)
 
-    def handle_upload_urdf(self, event: viser.GuiEvent[viser.GuiUploadButtonHandle]):
-        """处理URDF文件上传事件"""
-        client = event.client
-        if client is None or client not in self.sessions:
-            return
-        
-        # 从事件中获取上传的文件
-        uploaded_file: viser.UploadedFile = event.target.value
-        if uploaded_file is None:
-            return
+    def setup_user_button_handlers(self, session: UserSession):
+        """为用户会话设置按钮事件处理"""
+        client = session.client
+        @session.btn_load_scene.on_click
+        def on_load_scene_click(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_load_scene(session, event)
+        @session.btn_clear_scene.on_click
+        def on_clear_scene_click(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_clear_scene(session, event)
 
-        # UploadedFile 只有 name 和 content，需要将内容写入临时文件来获取文件路径
-        file_name = uploaded_file.name
-        file_path = os.path.join(SCENE_DIR, "urdf", file_name)
+    def handle_load_scene(self, session: UserSession, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理加载场景按钮事件"""
+        client = session.client
+        
+        if session.is_scene_loaded:
+            return  # 如果场景已经加载，不允许再次加载
         
         try:
-            urdf = URDF.load(file_path)
-            print(f"成功加载 URDF, 文件路径: {file_path}")
+            config_path = SCENE_DIR / "config.json"
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
             
-            # 获取用户的 session
-            session = self.sessions[client]
+            robot_positions = config.get("robot_positions", {})
             
             # 定义slider变化回调函数
             def on_slider_change(robot_name: str, joint_config: np.ndarray):
@@ -82,12 +85,41 @@ class Controller:
                 except Exception as e:
                     print(f"更新机器人关节配置时出错: {e}")
             
-            # 委托给UserSession处理（它会创建所有相关资源）
-            session.add_urdf(urdf, on_slider_change=on_slider_change)
+            # 加载配置中的所有机器人
+            for robot_name in robot_positions.keys():
+                urdf_path = SCENE_DIR / "urdf" / f"{robot_name}.urdf"
+                if urdf_path.exists():
+                    urdf = URDF.load(str(urdf_path))
+                    session.add_urdf(urdf, on_slider_change=on_slider_change)
+                    print(f"用户 {client.client_id} 加载了机器人: {robot_name}")
+
+
+
+            # TODO 这里还用工具头和工件的加载
             
-            print(f"用户 {client.client_id} 上传了 URDF: {file_name}")
+
+            
+            # 标记场景已加载
+            session.is_scene_loaded = True
+            
+            # 禁用加载场景按钮，启用清除场景按钮
+            if session.btn_load_scene is not None:
+                session.btn_load_scene.disabled = True
+            if session.btn_clear_scene is not None:
+                session.btn_clear_scene.disabled = False
+            
+            print(f"用户 {client.client_id} 场景加载成功")
         except Exception as e:
-            print(f"加载 URDF 时出错: {e}")
+            print(f"加载场景时出错: {e}")
+
+    def handle_clear_scene(self, session: UserSession, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理清除场景按钮事件"""
+        client = session.client
+        
+        if not session.is_scene_loaded:
+            return  # 如果场景未加载，不允许清除
+    
+        session.clear_scene() #清空加载的场景
 
     def run(self):
         """运行控制器"""

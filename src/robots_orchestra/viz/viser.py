@@ -37,15 +37,10 @@ class ViserUI:
             position=(0.0, 0.0, 0.0)  # 原点位置
         )
 
-        # 创建"场景加载"文件夹并保存引用
+        # 创建"场景加载"文件夹并保存引用（现在只作为容器，按钮将在UserSession中为每个用户创建）
         self.scene_folder = self.server.gui.add_folder("场景加载")
         with self.scene_folder:
-            self.btn_upload = self.server.gui.add_upload_button(
-                "上传 URDF",
-                mime_type="application/xml,text/xml,.urdf"  # 限制上传类型为 URDF
-            )
-            # 创建"机器人拖动"文件夹，用于显示每个机器人的关节slider
-            self.robot_drag_folder = self.server.gui.add_folder("机器人拖动")
+            self.robot_drag_folder = self.server.gui.add_folder("机器人拖动") # 创建"机器人拖动"文件夹，用于显示每个机器人的关节slider
 
     """长任务执行单元, 目前只是测试， 后续应该会尽可能的罗列出所有子任务"""
     def initialize_process(self):
@@ -68,6 +63,13 @@ class ViserUI:
                 self.marvin_show_capture_pcl = self.server.gui.add_checkbox("显示定位点云", initial_value=False)
                 self.marvin_capture_pose = self.server.gui.add_button("生成抓取姿态", icon=viser.Icon.CAPTURE)
                 self.marvin_show_capture_pose = self.server.gui.add_checkbox("显示抓取姿态", initial_value=False)
+
+
+            with self.server.gui.add_folder("Fanuc右臂焊接任务"):
+                pass
+
+            with self.server.gui.add_folder("Fanuc左臂打磨任务"):
+                pass
 
     def load_rolab(self):
         """加载并显示完整的实验室点云模型"""

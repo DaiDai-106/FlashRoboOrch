@@ -37,8 +37,18 @@ class UserSession:
         # 存储该用户的IK求解器（按机器人名称）
         self.ik_solvers: Dict[str, IKSolver] = {}
         
+        # 场景加载状态标志
+        self.is_scene_loaded = False
+        
+        # 存储该用户的场景加载按钮控件
+        self.btn_load_scene: Optional[Any] = None
+        self.btn_clear_scene: Optional[Any] = None
+        
         # 加载机器人位置配置
         self.robot_config = self.load_robot_config()
+        
+        # 为每个用户创建独立的场景加载按钮
+        self.create_scene_buttons()
 
     def load_robot_config(self) -> Dict[str, Any]:
         """加载机器人位置配置文件"""
@@ -52,6 +62,34 @@ class UserSession:
             print(f"加载机器人配置文件时出错: {e}")
         return {}
     
+    def create_scene_buttons(self):
+        """为当前用户创建场景加载和清除按钮"""
+        # 在场景加载文件夹中为该用户创建按钮（使用唯一的名称）
+        button_name_prefix = f"user_{self.client.client_id}_"
+        with self.ui.scene_folder:
+            self.btn_load_scene = self.ui.server.gui.add_button(
+                f"加载场景 (用户 {self.client.client_id})"
+            )
+            self.btn_clear_scene = self.ui.server.gui.add_button(
+                f"清除场景 (用户 {self.client.client_id})"
+            )
+            # 初始化按钮状态：加载场景可用，清除场景禁用
+            self.btn_load_scene.disabled = False
+            self.btn_clear_scene.disabled = True
+    
+    def remove_scene_buttons(self):
+        """移除该用户的场景按钮"""
+        if self.btn_load_scene is not None:
+            try:
+                self.btn_load_scene.remove()
+            except Exception as e:
+                print(f"删除加载场景按钮时出错: {e}")
+        if self.btn_clear_scene is not None:
+            try:
+                self.btn_clear_scene.remove()
+            except Exception as e:
+                print(f"删除清除场景按钮时出错: {e}")
+
     def get_robot_position(self, robot_name: str) -> tuple:
         """获取机器人的位置和旋转配置
         
@@ -146,11 +184,29 @@ class UserSession:
         if robot_name in self.ik_solvers:
             del self.ik_solvers[robot_name]
 
+    # TODO 这里还有工具头, 场景中的工件加载, 以及
+
+    def clear_scene(self):
+        """清除该用户的所有场景（机器人）"""
+        robot_names = list(self.robots.keys())
+        for robot_name in robot_names:
+            self.remove_urdf(robot_name)
+        self.is_scene_loaded = False
+        # 更新按钮状态
+        if self.btn_load_scene is not None:
+            self.btn_load_scene.disabled = False
+        if self.btn_clear_scene is not None:
+            self.btn_clear_scene.disabled = True
+        print(f"用户 {self.client.client_id} 的场景已清除")
+
     def cleanup(self):
         """清理该用户的所有资源（用户断开时调用）"""
         robot_names = list(self.robots.keys())
         for robot_name in robot_names:
             self.remove_urdf(robot_name)
+        self.is_scene_loaded = False
+        # 移除该用户的场景按钮
+        self.remove_scene_buttons()
         print(f"用户 {self.client.client_id} 的所有资源已清理")
 
     def create_robot_sliders(
@@ -363,21 +419,19 @@ class UserSession:
                     tf_controls_rel = ampl.qt7_to_tf44(qt7_controls_rel)
                     
                     # 计算轨道工具相对于base_link的绝对变换
-                    # absolute_tf = end_effector_tf @ controls_rel_tf
                     tf_target_local = tf_end_effector_local @ tf_controls_rel
                     
                     # 提取相对于base_link的局部坐标
                     qt7_target = ampl.tf44_to_qt7(tf_target_local)
-                    # ampl的qt7格式是 (qx, qy, qz, qw, x, y, z)
-                    # IK求解器需要的格式是 (qx, qy, qz, qw, x, y, z)
+
                     target_frame = [
-                        float(qt7_target[0]),  # qx
-                        float(qt7_target[1]),  # qy
-                        float(qt7_target[2]),  # qz
-                        float(qt7_target[3]),  # qw
-                        float(qt7_target[4]),  # x
-                        float(qt7_target[5]),  # y
-                        float(qt7_target[6])   # z
+                        float(qt7_target[0]),  
+                        float(qt7_target[1]),  
+                        float(qt7_target[2]),  
+                        float(qt7_target[3]),  
+                        float(qt7_target[4]),  
+                        float(qt7_target[5]),  
+                        float(qt7_target[6])   
                     ]
                     
                     # 调用逆解求解

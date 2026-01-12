@@ -41,7 +41,6 @@ class IKSolver:
             else:
                 status = self.solver.ik(end_pose, sols) 
 
-
             sols = sols.tolist()
             if self.robot_type == "abb_irb6700_150_320":
                 if len(sols) >= 2:
