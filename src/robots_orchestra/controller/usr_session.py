@@ -363,15 +363,19 @@ class UserSession:
             # 加载URDF文件
             urdf = URDF.load(str(urdf_path))
             
-            # 如果没有提供回调函数，使用默认的回调函数
+            # 如果没有提供回调函数，使用默认的回调函数（使用统一的可视化更新方法）
             if on_slider_change is None:
                 def default_on_slider_change(robot_name: str, joint_config: np.ndarray):
                     """默认的slider变化回调函数"""
                     try:
-                        if robot_name in self.robots:
-                            viser_urdf_handle = self.robots[robot_name]
-                            viser_urdf_handle.update_cfg(joint_config)
-                            print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
+                        # 使用统一的可视化更新方法
+                        self.update_robot_visualization(
+                            robot_name,
+                            joint_config,
+                            update_sliders=False,  # slider已经更新了，不需要再次更新
+                            update_end_effector_state=True  # 更新末端执行器状态
+                        )
+                        print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
                     except Exception as e:
                         print(f"更新机器人关节配置时出错: {e}")
                 on_slider_change = default_on_slider_change
@@ -402,14 +406,18 @@ class UserSession:
             for car_name in self.mobile_car_config.keys():
                 self.load_mobile_car(car_name)
 
-            # 定义slider变化回调函数（内部实现）
+            # 定义slider变化回调函数（内部实现，使用统一的可视化更新方法）
             def on_slider_change(robot_name: str, joint_config: np.ndarray):
                 """当slider值变化时, 更新URDF的关节配置"""
                 try:
-                    if robot_name in self.robots:
-                        viser_urdf_handle = self.robots[robot_name]
-                        viser_urdf_handle.update_cfg(joint_config)
-                        print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
+                    # 使用统一的可视化更新方法
+                    self.update_robot_visualization(
+                        robot_name,
+                        joint_config,
+                        update_sliders=False,  # slider已经更新了，不需要再次更新
+                        update_end_effector_state=True  # 更新末端执行器状态
+                    )
+                    print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
                 except Exception as e:
                     print(f"更新机器人关节配置时出错: {e}")
 
@@ -521,7 +529,15 @@ class UserSession:
                         current_config[jn] for jn in joint_names
                     ], dtype=np.float64)
                     
-                    # 调用外部回调函数
+                    # 使用统一的可视化更新方法
+                    self.update_robot_visualization(
+                        robot_name,
+                        joint_config,
+                        update_sliders=False,  # slider已经更新了，不需要再次更新
+                        update_end_effector_state=True  # 更新末端执行器状态
+                    )
+                    
+                    # 调用外部回调函数（如果提供）
                     if on_slider_change is not None:
                         on_slider_change(robot_name, joint_config)
                 
@@ -719,8 +735,15 @@ class UserSession:
                     
                     if solutions is not None and len(solutions) > 0:
                         new_joint_config = np.array(solutions[0], dtype=np.float64)  # TODO 这个地方对于逆解的选取可能需要有些说法 
-                        viser_urdf_handle.update_cfg(new_joint_config)
-                        robot_info["current_joint_config"] = new_joint_config
+                        
+                        # 使用统一的可视化更新方法
+                        self.update_robot_visualization(
+                            robot_name,
+                            new_joint_config,
+                            update_sliders=True,  # 拖动末端执行器时，同步更新slider
+                            update_end_effector_state=True  # 更新末端执行器状态
+                        )
+                        
                         print(f"用户 {self.client.client_id} 的机器人 {robot_name} 逆解成功")
                     else:
                         print(f"用户 {self.client.client_id} 的机器人 {robot_name} 逆解失败，无解")
@@ -765,7 +788,7 @@ class UserSession:
         planner = self.planners[robot_name]
         q_start = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         q_end = np.array([0, 0.35, 0.67, 0, -1.02, 0])
-        trajectory = planner.sample_trajectory(q_start, q_end, n=10, include_start=True, inclue_end=True)
+        trajectory = planner.sample_trajectory(q_start, q_end, n=50, include_start=True, inclue_end=True)
         
         # 保存轨迹
         self.abb_trajectory = trajectory
@@ -794,39 +817,52 @@ class UserSession:
             def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
                 """当进度条值变化时，更新仿真状态"""
                 step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
-                self.update_simulation(step_index)
-        
+                num_steps = len(self.abb_trajectory)
+                step_index = max(0, min(step_index, num_steps - 1))
+                joint_config = self.abb_trajectory[step_index]
+                self.update_robot_visualization(
+                    self.abb_robot_name, 
+                    joint_config,
+                    update_sliders=True,
+                    update_end_effector_state=True
+                )
         print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(self.abb_trajectory)}")
     
-    def update_simulation(self, step_index: int):
-        """根据轨迹索引更新仿真状态
+    def update_robot_visualization(self, robot_name: str, joint_config: np.ndarray, update_sliders: bool = True, update_end_effector_state: bool = True):
+        """统一的可视化更新回调函数，兼容所有情况
+        
+        这个方法可以被以下情况调用：
+        1. 拖动关节slider
+        2. 拖动末端执行器（通过IK求解后）
+        3. 拖动轨迹进度条
         
         Args:
-            step_index: 轨迹索引，范围 [0, len(trajectory)-1]
+            robot_name: 机器人名称
+            joint_config: 关节配置数组，形状为 (dof,)
+            update_sliders: 是否同步更新关节slider的值（默认True）
+            update_end_effector_state: 是否更新末端执行器控件的状态（默认True）
         """
-        if self.abb_trajectory is None or self.abb_robot_name is None:
-            return 
+        if robot_name not in self.robots:
+            return  # 机器人不存在
         
-        if self.abb_robot_name not in self.robots:
-            return 
+        # 确保joint_config是numpy数组
+        joint_config = np.asarray(joint_config, dtype=np.float64)
         
-        # 确保索引在有效范围内
-        num_steps = len(self.abb_trajectory)
-        step_index = max(0, min(step_index, num_steps - 1))
-        
-        # 获取当前时间步的关节配置
-        joint_config = self.abb_trajectory[step_index]
-        
-        # 更新机器人关节配置
-        viser_urdf_handle = self.robots[self.abb_robot_name]
+        # 更新机器人可视化
+        viser_urdf_handle = self.robots[robot_name]
         viser_urdf_handle.update_cfg(joint_config)
         
-        # 如果有关节slider，也更新slider的值（可选）
-        if self.abb_robot_name in self.robot_sliders:
-            robot_info = self.robot_sliders[self.abb_robot_name]
+        # 同步更新关节slider的值（如果存在且需要更新）
+        if update_sliders and robot_name in self.robot_sliders:
+            robot_info = self.robot_sliders[robot_name]
             sliders = robot_info["sliders"]
             actuated_joints = robot_info["actuated_joints"]
             
             for i, joint_name in enumerate(actuated_joints):
-                if joint_name in sliders:
+                if joint_name in sliders and i < len(joint_config):
                     sliders[joint_name].value = float(joint_config[i])
+        
+        # 更新末端执行器控件的当前关节配置状态（如果存在且需要更新）
+        if update_end_effector_state and robot_name in self.end_effector_controls:
+            robot_info = self.end_effector_controls[robot_name]
+            robot_info["current_joint_config"] = joint_config.copy()
