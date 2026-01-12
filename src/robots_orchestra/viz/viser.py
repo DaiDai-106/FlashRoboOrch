@@ -45,28 +45,36 @@ class ViserUI:
     """长任务执行单元, 目前只是测试， 后续应该会尽可能的罗列出所有子任务"""
     def initialize_process(self):
         with self.server.gui.add_folder("长任务执行单元"):
-            with self.server.gui.add_folder("ABB 框架移动任务"):
+            with self.server.gui.add_folder("框架移动任务"):
                 self.abb_offline_planning = self.server.gui.add_button("ABB 框架移动", icon=viser.Icon.MOUSE)
                 self.abb_view_simulation = self.server.gui.add_folder("查看仿真")  # 创建"查看仿真"文件夹，用于显示仿真界面
                 self.abb_execute = self.server.gui.add_button("任务执行", icon=viser.Icon.HAND_MOVE)
 
-            with self.server.gui.add_folder("天机电焊线配置任务"):
-                self.marvin_offline_planning = self.server.gui.add_button("离线规划", icon=viser.Icon.MOUSE)
-
-
-            with self.server.gui.add_folder("天机工件装配任务"):
-                self.marvin_go_home = self.server.gui.add_button("回到加工台", icon=viser.Icon.HAND_MOVE)
-                self.marvin_capture = self.server.gui.add_button("定位加持工件", icon=viser.Icon.CAPTURE)
-                self.marvin_show_capture_pcl = self.server.gui.add_checkbox("显示定位点云", initial_value=False)
-                self.marvin_capture_pose = self.server.gui.add_button("生成抓取姿态", icon=viser.Icon.CAPTURE)
-                self.marvin_show_capture_pose = self.server.gui.add_checkbox("显示抓取姿态", initial_value=False)
-
-
-            with self.server.gui.add_folder("Fanuc右臂焊接任务"):
+            with self.server.gui.add_folder("电焊线配置任务"):
                 pass
+                # self.marvin_go_station = self.server.gui.add_button("ABB 框架移动", icon=viser.Icon.MOUSE)
+                # self.abb_view_simulation = self.server.gui.add_folder("查看仿真")  # 创建"查看仿真"文件夹，用于显示仿真界面
 
-            with self.server.gui.add_folder("Fanuc左臂打磨任务"):
+
+            with self.server.gui.add_folder("工件装配任务"):
                 pass
+                # self.marvin_go_home = self.server.gui.add_button("回到加工台", icon=viser.Icon.HAND_MOVE)
+                # self.marvin_capture = self.server.gui.add_button("定位加持工件", icon=viser.Icon.CAPTURE)
+                # self.marvin_show_capture_pcl = self.server.gui.add_checkbox("显示定位点云", initial_value=False)
+                # self.marvin_capture_pose = self.server.gui.add_button("生成抓取姿态", icon=viser.Icon.CAPTURE)
+                # self.marvin_show_capture_pose = self.server.gui.add_checkbox("显示抓取姿态", initial_value=False)
+
+            
+            with self.server.gui.add_folder("焊接任务"):
+
+                with self.server.gui.add_folder("Fanuc左臂焊接任务"):
+                    pass
+
+                with self.server.gui.add_folder("Fanuc右臂焊接任务"):
+                    pass
+
+                with self.server.gui.add_folder("Fanuc右臂打磨任务"):
+                    pass
 
     def load_rolab(self):
         """加载并显示完整的实验室点云模型"""

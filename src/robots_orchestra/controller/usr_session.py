@@ -29,6 +29,7 @@ class UserSession:
         self.objects: Dict[str, Any] = {} # 存储该用户的所有对象可视化对象
 
         self.robot_frames: Dict[str, Any] = {} # 存储该用户每个机器人的基座base frame（用于设置位置）
+        self.mobile_car_frames: Dict[str, Any] = {} # 存储该用户每个移动小车的基座base frame（用于设置位置）
         self.robot_sliders: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的关节slider控件, 结构: {robot_name: {folder, sliders, actuated_joints}}
         self.end_effector_controls: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的末端执行器轨道工具, 结构: {robot_name: {controls, controls_name, ik_solver, current_joint_config}}
         self.ik_solvers: Dict[str, IKSolver] = {} # 存储该用户的IK求解器（按机器人名称）
@@ -51,8 +52,6 @@ class UserSession:
     # --------------------------------------------------------- 按钮创建和移除 ---------------------------------------------------------
     def create_scene_buttons(self):
         """为当前用户创建场景加载和清除按钮"""
-        # 在场景加载文件夹中为该用户创建按钮（使用唯一的名称）
-        button_name_prefix = f"user_{self.client.client_id}_"
         with self.ui.scene_folder:
             self.btn_load_scene = self.ui.server.gui.add_button(
                 f"加载场景 (用户 {self.client.client_id})"
@@ -148,68 +147,98 @@ class UserSession:
         return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)
 
     # --------------------------------------------------------- 场景中全部物体初的一次性的加载 ---------------------------------------------------------
-    def add_urdf(self, urdf: URDF, on_slider_change: Optional[Callable[[str, np.ndarray], None]] = None):
-        """添加URDF机器人并创建相关控件
+    def add_urdf(self, urdf: URDF, entity_type: str, on_slider_change: Optional[Callable[[str, np.ndarray], None]] = None):
+        """添加URDF机器人或移动小车并创建相关控件
         
         Args:
             urdf: URDF对象
-            on_slider_change: slider值变化时的回调函数，参数为(robot_name, joint_config)
+            entity_type: 实体类型 ("robot", "mobile_car")
+            on_slider_change: slider值变化时的回调函数,参数为(robot_name, joint_config)
         """
-        robot_name = urdf.robot.name  # TODO 这个地方暂时是没有问题的， 如果有多个同样的机械臂可能会有问题
-        if robot_name in self.robots:
-            self.remove_urdf(robot_name)
-
-        # 获取机器人位置配置
-        position, rotation = self.get_position(robot_name, "robot")
+        entity_name = urdf.robot.name  # 实体名称（机器人或小车名称）
         
-        # 创建机器人的base frame（用于设置位置）
-        frame_name = f"{self.namespace}/robot_frame_{robot_name}"
-        robot_frame = self.ui.server.scene.add_frame(
+        # 根据entity_type决定存储位置和是否已存在
+        if entity_type == "robot":
+            storage_dict = self.robots
+            if entity_name in self.robots or entity_name in self.mobile_cars:
+                existing_type = "robot" if entity_name in self.robots else "mobile_car"
+                self.remove_urdf(entity_name, existing_type)
+        elif entity_type == "mobile_car":
+            storage_dict = self.mobile_cars
+            if entity_name in self.mobile_cars or entity_name in self.robots:
+                existing_type = "mobile_car" if entity_name in self.mobile_cars else "robot"
+                self.remove_urdf(entity_name, existing_type)
+        else:
+            print(f"警告: 未知的实体类型 {entity_type}")
+            return
+
+        # 获取位置配置（根据entity_type）
+        position, rotation = self.get_position(entity_name, entity_type)
+        
+        # 创建实体的base frame（用于设置位置）
+        frame_name = f"{self.namespace}/{entity_type}_frame_{entity_name}"  # 使用统一的命名格式
+        entity_frame = self.ui.server.scene.add_frame(
             name=frame_name,
             show_axes=False,  # 不显示坐标轴
             position=position,
             wxyz=rotation,  # 四元数 (w, x, y, z)
         )
 
-        self.robot_frames[robot_name] = robot_frame
+        if entity_type == "robot":
+            self.robot_frames[entity_name] = entity_frame
+        elif entity_type == "mobile_car":
+            self.mobile_car_frames[entity_name] = entity_frame
+       
         # 使用frame作为root节点
-        root_node_name = f"{frame_name}/{robot_name}"
+        root_node_name = f"{frame_name}/{entity_name}"
         viser_urdf_handle = ViserUrdf(
             self.ui.server, 
             urdf, 
             root_node_name=root_node_name, 
             load_collision_meshes=False
         ) 
-        self.robots[robot_name] = viser_urdf_handle
         
-        # 设置默认关节配置
+        # 根据entity_type存储到对应的字典
+        storage_dict[entity_name] = viser_urdf_handle
         actuated_joints = urdf.actuated_joints
         dof = len(actuated_joints)
         default_joint = np.array([0.001] * dof, dtype=np.float64)
-        self.robots[robot_name].update_cfg(default_joint)
+        viser_urdf_handle.update_cfg(default_joint)
         
-        # 创建机器人关节slider控件
-        self.create_robot_sliders(robot_name, urdf, on_slider_change)
-        
-        # 创建末端执行器轨道工具
-        self.create_end_effector_orbit_tool(robot_name, urdf, default_joint)
+        # 根据entity_type决定创建哪些控件
+        if entity_type == "robot":
+            # 机器人：创建所有控件（slider和末端执行器工具）
+            self.create_end_effector_orbit_tool(entity_name, urdf, default_joint)
+        elif entity_type == "mobile_car":
+            pass
 
-    def remove_urdf(self, robot_name: str) -> None:
-        """移除指定的URDF机器人及其所有相关资源"""
-        if robot_name not in self.robots:
+        self.create_robot_sliders(entity_name, urdf, on_slider_change)
+
+    def remove_urdf(self, entity_name: str, entity_type: str) -> None:
+        """移除指定的URDF机器人或移动小车及其所有相关资源
+        
+        Args:
+            entity_name: 实体名称（机器人或小车名称）
+            entity_type: 实体类型 ("robot", "mobile_car")
+        """
+        # 检查是否在robots或mobile_cars中
+        in_robots = entity_name in self.robots
+        in_mobile_cars = entity_name in self.mobile_cars
+        
+        if not in_robots and not in_mobile_cars:
             return
         
-        # 移除末端执行器轨道工具
-        if robot_name in self.end_effector_controls:
-            self.remove_end_effector_controls(robot_name)
+        # 移除末端执行器轨道工具（仅机器人有）
+        if entity_name in self.end_effector_controls:
+            self.remove_end_effector_controls(entity_name)
         
         # 移除slider控件
-        if robot_name in self.robot_sliders:
-            self.remove_robot_sliders(robot_name)
+        if entity_name in self.robot_sliders:
+            self.remove_robot_sliders(entity_name)
         
         # 移除URDF可视化场景节点
-        frame_name = f"{self.namespace}/robot_frame_{robot_name}"
-        root_node_name = f"{frame_name}/{robot_name}"
+        frame_name = f"{self.namespace}/{entity_type}_frame_{entity_name}"
+        root_node_name = f"{frame_name}/{entity_name}"
         try:
             # 删除场景节点（这会删除整个URDF树）
             self.ui.server.scene.remove_by_name(root_node_name)
@@ -218,40 +247,39 @@ class UserSession:
         except Exception as e:
             print(f"删除URDF场景节点时出错: {e}")
         
-        del self.robots[robot_name]
+        # 从对应的存储字典中删除
+        if in_robots:
+            del self.robots[entity_name]
+        if in_mobile_cars:
+            del self.mobile_cars[entity_name]
         
-        # 删除frame引用
-        if robot_name in self.robot_frames:
-            del self.robot_frames[robot_name]
+        # 删除frame引用（根据entity_type删除对应的frame字典）
+        if entity_type == "robot" and entity_name in self.robot_frames:
+            del self.robot_frames[entity_name]
+        elif entity_type == "mobile_car" and entity_name in self.mobile_car_frames:
+            del self.mobile_car_frames[entity_name]
         
-        # 清理IK求解器
-        if robot_name in self.ik_solvers:
-            del self.ik_solvers[robot_name]
+        # 清理IK求解器（仅机器人有）
+        if entity_type == "robot" and entity_name in self.ik_solvers:
+            del self.ik_solvers[entity_name]
 
-        # 清理规划器
-        if robot_name in self.planners:
-            del self.planners[robot_name]
+        # 清理规划器（仅机器人有）
+        if entity_type == "robot" and entity_name in self.planners:
+            del self.planners[entity_name]
 
     def load_mobile_car(self, car_name: str):
-        """加载移动小车"""
+        """加载移动小车（使用URDF方式）"""
         try:
-            # 构建移动小车模型路径
-            car_path = SCENE_DIR / "mobile"  / "car.stl"
-            if car_path.exists():
-                mesh = trimesh.load_mesh(str(car_path))
-                mesh.apply_scale(0.001)
+            # 构建移动小车URDF路径
+            urdf_path = SCENE_DIR / "mobile" / f"{car_name}.urdf"
+            if not urdf_path.exists():
+                print(f"移动小车URDF文件不存在: {urdf_path}")
+                return False
             
-                # 获取位置和旋转配置，并转换为 numpy array
-                position, wxyz = self.get_position(car_name, "mobile_car")
-                car_handle = self.ui.server.scene.add_mesh_simple(
-                    name=f"{self.namespace}/{car_name}",
-                    vertices=mesh.vertices,
-                    faces=mesh.faces,
-                    position=position,
-                    wxyz=wxyz,
-                )
-                self.mobile_cars[car_name] = car_handle
-                return True
+            urdf = URDF.load(str(urdf_path))
+            self.add_urdf(urdf, "mobile_car", on_slider_change=None)
+            print(f"用户 {self.client.client_id} 加载了移动小车: {car_name}")
+            return True
         except Exception as e:
             print(f"加载移动小车模型时出错: {e}")
             import traceback
@@ -327,11 +355,9 @@ class UserSession:
 
 
     def remove_mobile_car(self, car_name: str):
-        """移除指定的移动小车"""
-        if car_name not in self.mobile_cars:
-            return
-        self.ui.server.scene.remove_by_name(f"{self.namespace}/{car_name}")
-        del self.mobile_cars[car_name]
+        """移除指定的移动小车（现在使用URDF方式，统一使用remove_urdf处理）"""
+        # 移动小车现在也使用URDF方式，使用remove_urdf统一处理
+        self.remove_urdf(car_name, "mobile_car")
 
     def remove_object(self, object_name: str):
         """移除指定的对象"""
@@ -381,7 +407,7 @@ class UserSession:
                 on_slider_change = default_on_slider_change
             
             # 添加URDF到场景
-            self.add_urdf(urdf, on_slider_change=on_slider_change)
+            self.add_urdf(urdf, "robot", on_slider_change=on_slider_change)
             print(f"用户 {self.client.client_id} 加载了机器人: {robot_name}")
             return True
             
@@ -444,15 +470,17 @@ class UserSession:
 
     def clear_scene(self):
         """清除该用户目前创建的全部的场景 (机器人、移动小车、对象)"""
+        # 移除所有机器人
         robot_names = list(self.robots.keys())
         for robot_name in robot_names:
-            self.remove_urdf(robot_name)
+            self.remove_urdf(robot_name, "robot")
 
-
-        # 1.先移除小车, 再移除OBJECTS, 最后移除机器人
-        for car_name in self.mobile_car_config.keys():
-            self.remove_mobile_car(car_name)
+        # 移除所有移动小车
+        car_names = list(self.mobile_cars.keys())
+        for car_name in car_names:
+            self.remove_urdf(car_name, "mobile_car")
         
+        # 移除所有对象
         for object_name in self.objects_config.keys():
             self.remove_object(object_name)
 
@@ -828,33 +856,44 @@ class UserSession:
                 )
         print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(self.abb_trajectory)}")
     
-    def update_robot_visualization(self, robot_name: str, joint_config: np.ndarray, update_sliders: bool = True, update_end_effector_state: bool = True):
-        """统一的可视化更新回调函数，兼容所有情况
+    def update_robot_visualization(self, entity_name: str, joint_config: np.ndarray, update_sliders: bool = True, update_end_effector_state: bool = True):
+        """统一的可视化更新回调函数，兼容所有情况（机器人和移动小车）
         
         这个方法可以被以下情况调用：
         1. 拖动关节slider
-        2. 拖动末端执行器（通过IK求解后）
+        2. 拖动末端执行器（通过IK求解后，仅机器人）
         3. 拖动轨迹进度条
         
         Args:
-            robot_name: 机器人名称
+            entity_name: 实体名称（机器人或小车名称）
             joint_config: 关节配置数组，形状为 (dof,)
             update_sliders: 是否同步更新关节slider的值（默认True）
-            update_end_effector_state: 是否更新末端执行器控件的状态（默认True）
+            update_end_effector_state: 是否更新末端执行器控件的状态（默认True，仅机器人有效）
         """
-        if robot_name not in self.robots:
-            return  # 机器人不存在
+        # 自动检测实体类型（机器人或移动小车）
+        is_robot = entity_name in self.robots
+        is_mobile_car = entity_name in self.mobile_cars
+        
+        if not is_robot and not is_mobile_car:
+            return  # 实体不存在
         
         # 确保joint_config是numpy数组
         joint_config = np.asarray(joint_config, dtype=np.float64)
         
-        # 更新机器人可视化
-        viser_urdf_handle = self.robots[robot_name]
+        # 从对应的字典中获取可视化句柄
+        if is_robot:
+            viser_urdf_handle = self.robots[entity_name]
+            entity_type = "robot"
+        else:
+            viser_urdf_handle = self.mobile_cars[entity_name]
+            entity_type = "mobile_car"
+        
+        # 更新实体可视化
         viser_urdf_handle.update_cfg(joint_config)
         
         # 同步更新关节slider的值（如果存在且需要更新）
-        if update_sliders and robot_name in self.robot_sliders:
-            robot_info = self.robot_sliders[robot_name]
+        if update_sliders and entity_name in self.robot_sliders:
+            robot_info = self.robot_sliders[entity_name]
             sliders = robot_info["sliders"]
             actuated_joints = robot_info["actuated_joints"]
             
@@ -862,7 +901,7 @@ class UserSession:
                 if joint_name in sliders and i < len(joint_config):
                     sliders[joint_name].value = float(joint_config[i])
         
-        # 更新末端执行器控件的当前关节配置状态（如果存在且需要更新）
-        if update_end_effector_state and robot_name in self.end_effector_controls:
-            robot_info = self.end_effector_controls[robot_name]
+        # 更新末端执行器控件的当前关节配置状态（仅机器人，如果存在且需要更新）
+        if update_end_effector_state and entity_type == "robot" and entity_name in self.end_effector_controls:
+            robot_info = self.end_effector_controls[entity_name]
             robot_info["current_joint_config"] = joint_config.copy()
