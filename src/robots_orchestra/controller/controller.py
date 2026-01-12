@@ -18,7 +18,10 @@ class Controller:
         def _(client: viser.ClientHandle):
             self.handle_disconnect(client)
 
-        # 不再使用全局按钮，改为在UserSession中为每个用户创建独立按钮
+        # 全局按钮事件处理（从event中获取client信息）
+        @self.ui.abb_offline_planning.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_abb_offline_planning(event)
 
     #----- UI 事件处理 ------------------------------------------------------------
 
@@ -67,6 +70,16 @@ class Controller:
             return  # 如果场景未加载，不允许清除
     
         session.clear_scene() #清空加载的场景
+
+    def handle_abb_offline_planning(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理ABB框架移动按钮事件（全局按钮，从event中获取触发事件的客户端）"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        
+        session = self.sessions[client]
+        session.abb_offline_planning()
 
     def run(self):
         """运行控制器"""

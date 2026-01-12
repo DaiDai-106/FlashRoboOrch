@@ -10,6 +10,7 @@ from robots_orchestra.viz.viser import ViserUI
 from viser.extras import ViserUrdf
 from yourdfpy import URDF
 from robots_orchestra.planner.ik_solver import IKSolver
+from robots_orchestra.planner.planner import Planner
 from robots_orchestra import SCENE_DIR
 from viser.extras._urdf import _viser_name_from_frame
 
@@ -30,7 +31,13 @@ class UserSession:
         self.robot_frames: Dict[str, Any] = {} # 存储该用户每个机器人的基座base frame（用于设置位置）
         self.robot_sliders: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的关节slider控件, 结构: {robot_name: {folder, sliders, actuated_joints}}
         self.end_effector_controls: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的末端执行器轨道工具, 结构: {robot_name: {controls, controls_name, ik_solver, current_joint_config}}
-        self.ik_solvers: Dict[str, IKSolver] = {} # 存储该用户的IK求解器（按机器人名称）    
+        self.ik_solvers: Dict[str, IKSolver] = {} # 存储该用户的IK求解器（按机器人名称）
+        
+        # 存储规划轨迹（用于仿真回放）
+        self.abb_trajectory: Optional[np.ndarray] = None  # 形状: (N, dof) - N个时间步，每个时间步的关节配置
+        self.abb_robot_name: Optional[str] = None  # 执行轨迹的机器人名称
+        self.abb_simulation_slider: Optional[Any] = None  # 仿真进度条控件
+        self.planners: Dict[str, Planner] = {} # 存储该用户的规划器（按机器人名称）
 
         self.robot_config = self.load_robot_config() # 加载机器人位置配置
         self.mobile_car_config = self.load_mobile_car_config() # 加载移动小车位置配置
@@ -220,6 +227,10 @@ class UserSession:
         # 清理IK求解器
         if robot_name in self.ik_solvers:
             del self.ik_solvers[robot_name]
+
+        # 清理规划器
+        if robot_name in self.planners:
+            del self.planners[robot_name]
 
     def load_mobile_car(self, car_name: str):
         """加载移动小车"""
@@ -449,6 +460,19 @@ class UserSession:
         """清理该用户的所有资源（用户断开时调用）"""
         self.clear_scene()
         self.remove_scene_buttons()     # 移除该用户的场景按钮
+        
+        # 移除仿真进度条
+        if self.abb_simulation_slider is not None:
+            try:
+                self.abb_simulation_slider.remove()
+            except Exception as e:
+                print(f"删除仿真进度条时出错: {e}")
+            self.abb_simulation_slider = None
+        
+        # 清理轨迹数据
+        self.abb_trajectory = None
+        self.abb_robot_name = None
+        
         print(f"用户 {self.client.client_id} 的所有资源已清理")
 
     def create_robot_sliders(
@@ -582,6 +606,16 @@ class UserSession:
             
             ik_solver = self.ik_solvers[robot_name]
 
+            # 初始化规划器
+            if robot_name not in self.planners:
+                try:
+                    self.planners[robot_name] = Planner(robot_name)
+                    print(f"成功初始化规划器: {robot_name}")
+                except Exception as e:
+                    print(f"初始化规划器失败: {robot_name}, 错误: {e}")
+                    return
+            planner = self.planners[robot_name]
+
             # 构建末端执行器链接对应的场景节点名称
             # ViserUrdf 使用 {root_node_name}/visual/{link_path} 格式来创建 mesh 节点
             frame_name = f"{self.namespace}/robot_frame_{robot_name}"
@@ -712,3 +746,87 @@ class UserSession:
             print(f"删除末端执行器控件时出错: {e}")
         
         del self.end_effector_controls[robot_name]
+
+
+    def abb_offline_planning(self):
+        """ABB框架移动离线规划
+        
+        规划完成后，保存轨迹并创建仿真进度条
+        """
+        robot_name = "abb_irb6700_150_320"
+        if robot_name not in self.planners:
+            print(f"警告: 机器人 {robot_name} 规划器未加载，无法进行规划")
+            return
+        
+        if robot_name not in self.robots:
+            print(f"警告: 机器人 {robot_name} 未加载，无法进行规划")
+            return
+        
+        planner = self.planners[robot_name]
+        q_start = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        q_end = np.array([0, 0.35, 0.67, 0, -1.02, 0])
+        trajectory = planner.sample_trajectory(q_start, q_end, n=10, include_start=True, inclue_end=True)
+        
+        # 保存轨迹
+        self.abb_trajectory = trajectory
+        self.abb_robot_name = robot_name
+        
+        # 如果进度条已存在，先移除
+        if self.abb_simulation_slider is not None:
+            try:
+                self.abb_simulation_slider.remove()
+            except Exception as e:
+                print(f"移除旧进度条时出错: {e}")
+        
+        # 在"查看仿真"文件夹下创建进度条
+        with self.ui.abb_view_simulation:
+            slider_name = f"用户{self.client.client_id}_轨迹"
+            self.abb_simulation_slider = self.ui.server.gui.add_slider(
+                slider_name,
+                min=0.0,
+                max=len(self.abb_trajectory) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
+                step=1,
+                initial_value=0,
+            )
+            
+            # 为进度条设置事件处理（槽函数）
+            @self.abb_simulation_slider.on_update
+            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
+                """当进度条值变化时，更新仿真状态"""
+                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
+                self.update_simulation(step_index)
+        
+        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(self.abb_trajectory)}")
+    
+    def update_simulation(self, step_index: int):
+        """根据轨迹索引更新仿真状态
+        
+        Args:
+            step_index: 轨迹索引，范围 [0, len(trajectory)-1]
+        """
+        if self.abb_trajectory is None or self.abb_robot_name is None:
+            return 
+        
+        if self.abb_robot_name not in self.robots:
+            return 
+        
+        # 确保索引在有效范围内
+        num_steps = len(self.abb_trajectory)
+        step_index = max(0, min(step_index, num_steps - 1))
+        
+        # 获取当前时间步的关节配置
+        joint_config = self.abb_trajectory[step_index]
+        
+        # 更新机器人关节配置
+        viser_urdf_handle = self.robots[self.abb_robot_name]
+        viser_urdf_handle.update_cfg(joint_config)
+        
+        # 如果有关节slider，也更新slider的值（可选）
+        if self.abb_robot_name in self.robot_sliders:
+            robot_info = self.robot_sliders[self.abb_robot_name]
+            sliders = robot_info["sliders"]
+            actuated_joints = robot_info["actuated_joints"]
+            
+            for i, joint_name in enumerate(actuated_joints):
+                if joint_name in sliders:
+                    sliders[joint_name].value = float(joint_config[i])

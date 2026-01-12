@@ -46,11 +46,8 @@ class ViserUI:
     def initialize_process(self):
         with self.server.gui.add_folder("长任务执行单元"):
             with self.server.gui.add_folder("ABB 框架移动任务"):
-                self.abb_process_show_target_object = self.server.gui.add_checkbox("显示目标物体", initial_value=True)
-                self.abb_capture = self.server.gui.add_button("生成抓取姿态", icon=viser.Icon.CAPTURE)
-                self.abb_process_show_catch_pose = self.server.gui.add_checkbox("显示抓取姿态", initial_value=False)
-                self.abb_offline_planning = self.server.gui.add_button("离线规划", icon=viser.Icon.MOUSE)
-                # TODO 可以加入一个查看仿真
+                self.abb_offline_planning = self.server.gui.add_button("ABB 框架移动", icon=viser.Icon.MOUSE)
+                self.abb_view_simulation = self.server.gui.add_folder("查看仿真")  # 创建"查看仿真"文件夹，用于显示仿真界面
                 self.abb_execute = self.server.gui.add_button("任务执行", icon=viser.Icon.HAND_MOVE)
 
             with self.server.gui.add_folder("天机电焊线配置任务"):
