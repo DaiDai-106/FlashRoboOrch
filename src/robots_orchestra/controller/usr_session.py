@@ -3,6 +3,7 @@ import time
 import json
 import numpy as np
 import ampl
+import trimesh
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 from robots_orchestra.viz.viser import ViserUI
@@ -10,58 +11,37 @@ from viser.extras import ViserUrdf
 from yourdfpy import URDF
 from robots_orchestra.planner.ik_solver import IKSolver
 from robots_orchestra import SCENE_DIR
+from viser.extras._urdf import _viser_name_from_frame
 
 # 用户会话，负责管理每个用户的所有私有资源
 class UserSession:
     def __init__(self, client: viser.ClientHandle, viser_ui: ViserUI):
         self.ui = viser_ui
         self.client = client
-        # 用户特定的命名空间前缀
-        self.namespace = f"/world/user_{client.client_id}"
-        
-        # 存储该用户的所有机器人URDF可视化对象
-        self.robots: Dict[str, Any] = {}
-        
-        # 存储该用户每个机器人的base frame（用于设置位置）
-        # 结构: {robot_name: frame_handle}
-        self.robot_frames: Dict[str, Any] = {}
-        
-        # 存储该用户每个机器人的关节slider控件
-        # 结构: {robot_name: {folder, sliders, actuated_joints}}
-        self.robot_sliders: Dict[str, Dict[str, Any]] = {}
-        
-        # 存储该用户每个机器人的末端执行器轨道工具
-        # 结构: {robot_name: {controls, controls_name, ik_solver, current_joint_config}}
-        self.end_effector_controls: Dict[str, Dict[str, Any]] = {}
-        
-        # 存储该用户的IK求解器（按机器人名称）
-        self.ik_solvers: Dict[str, IKSolver] = {}
-        
-        # 场景加载状态标志
-        self.is_scene_loaded = False
-        
-        # 存储该用户的场景加载按钮控件
-        self.btn_load_scene: Optional[Any] = None
-        self.btn_clear_scene: Optional[Any] = None
-        
-        # 加载机器人位置配置
-        self.robot_config = self.load_robot_config()
-        
-        # 为每个用户创建独立的场景加载按钮
-        self.create_scene_buttons()
 
-    def load_robot_config(self) -> Dict[str, Any]:
-        """加载机器人位置配置文件"""
-        config_path = SCENE_DIR / "config.json"
-        try:
-            if config_path.exists():
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    return config.get("robot_positions", {})
-        except Exception as e:
-            print(f"加载机器人配置文件时出错: {e}")
-        return {}
+
+        self.is_scene_loaded = False # 场景加载状态标志
+
+        self.namespace = f"/world/user_{client.client_id}" # 用户特定的命名空间前缀
+        self.robots: Dict[str, Any] = {} # 存储该用户的所有机器人URDF可视化对象
+        self.mobile_cars: Dict[str, Any] = {} # 存储该用户的所有移动小车可视化对象
+        self.objects: Dict[str, Any] = {} # 存储该用户的所有对象可视化对象
+
+        self.robot_frames: Dict[str, Any] = {} # 存储该用户每个机器人的基座base frame（用于设置位置）
+        self.robot_sliders: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的关节slider控件, 结构: {robot_name: {folder, sliders, actuated_joints}}
+        self.end_effector_controls: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的末端执行器轨道工具, 结构: {robot_name: {controls, controls_name, ik_solver, current_joint_config}}
+        self.ik_solvers: Dict[str, IKSolver] = {} # 存储该用户的IK求解器（按机器人名称）    
+
+        self.robot_config = self.load_robot_config() # 加载机器人位置配置
+        self.mobile_car_config = self.load_mobile_car_config() # 加载移动小车位置配置
+        self.objects_config = self.load_objects_config() # 加载对象位置配置
     
+        # 初始化部分功能
+        self.btn_load_scene: Optional[Any] = None # 存储该用户的场景加载按钮控件
+        self.btn_clear_scene: Optional[Any] = None # 存储该用户的场景清除按钮控件
+        self.create_scene_buttons() # 为每个用户创建独立的场景加载按钮
+    
+    # --------------------------------------------------------- 按钮创建和移除 ---------------------------------------------------------
     def create_scene_buttons(self):
         """为当前用户创建场景加载和清除按钮"""
         # 在场景加载文件夹中为该用户创建按钮（使用唯一的名称）
@@ -90,20 +70,77 @@ class UserSession:
             except Exception as e:
                 print(f"删除清除场景按钮时出错: {e}")
 
-    def get_robot_position(self, robot_name: str) -> tuple:
-        """获取机器人的位置和旋转配置
+    # --------------------------------------------------------- 基础操作 ---------------------------------------------------------
+    def load_robot_config(self) -> Dict[str, Any]:
+        """加载机器人位置配置文件"""
+        config_path = SCENE_DIR / "config.json"
+        try:
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    return config.get("robot_positions", {})
+        except Exception as e:
+            print(f"加载机器人配置文件时出错: {e}")
+        return {}
+
+    def load_mobile_car_config(self) -> Dict[str, Any]:
+        """加载移动小车位置配置文件"""
+        config_path = SCENE_DIR / "config.json"
+        try:
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    return config.get("mobile_car", {})
+        except Exception as e:
+            print(f"加载移动小车配置文件时出错: {e}")
+        return {}
+
+    def load_objects_config(self) -> Dict[str, Any]:
+        """加载对象位置配置文件"""
+        config_path = SCENE_DIR / "config.json"
+        try:
+            if config_path.exists():
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    return config.get("objects", {})
+        except Exception as e:
+            print(f"加载对象配置文件时出错: {e}")
+
+    def get_position(self, entity_name: str, entity_type: str) -> tuple:
+        """获取机器人、小车或对象的位置和旋转配置
+        
+        Args:
+            entity_name: 实体名称（可以是机器人名称、小车名称或对象名称）
+            entity_type: 实体类型 ("robot", "mobile_car", "object")
         
         Returns:
             (position, rotation) 元组，position是(x, y, z)，rotation是四元数(w, x, y, z)
         """
-        if robot_name in self.robot_config:
-            config = self.robot_config[robot_name]
+        if entity_type == "robot":
+            if entity_name not in self.robot_config:
+                return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)
+            config = self.robot_config[entity_name]
             position = tuple(config.get("position", [0.0, 0.0, 0.0]))
             rotation = tuple(config.get("rotation", [1.0, 0.0, 0.0, 0.0]))  # 默认无旋转
             return position, rotation
-        # 默认位置
+        elif entity_type == "mobile_car":
+            if entity_name not in self.mobile_car_config:
+                return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)
+            config = self.mobile_car_config[entity_name]
+            position = tuple(config.get("position", [0.0, 0.0, 0.0]))
+            rotation = tuple(config.get("rotation", [1.0, 0.0, 0.0, 0.0]))  # 默认无旋转
+            return position, rotation
+        elif entity_type == "object":
+            if entity_name not in self.objects_config:
+                return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)
+            config = self.objects_config[entity_name]
+            position = tuple(config.get("position", [0.0, 0.0, 0.0]))
+            rotation = tuple(config.get("rotation", [1.0, 0.0, 0.0, 0.0]))  # 默认无旋转
+            return position, rotation
+    
         return (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0)
 
+    # --------------------------------------------------------- 场景中全部物体初的一次性的加载 ---------------------------------------------------------
     def add_urdf(self, urdf: URDF, on_slider_change: Optional[Callable[[str, np.ndarray], None]] = None):
         """添加URDF机器人并创建相关控件
         
@@ -116,7 +153,7 @@ class UserSession:
             self.remove_urdf(robot_name)
 
         # 获取机器人位置配置
-        position, rotation = self.get_robot_position(robot_name)
+        position, rotation = self.get_position(robot_name, "robot")
         
         # 创建机器人的base frame（用于设置位置）
         frame_name = f"{self.namespace}/robot_frame_{robot_name}"
@@ -129,7 +166,7 @@ class UserSession:
 
         self.robot_frames[robot_name] = robot_frame
         # 使用frame作为root节点
-        root_node_name = f"{frame_name}/base_link_{robot_name}"
+        root_node_name = f"{frame_name}/{robot_name}"
         viser_urdf_handle = ViserUrdf(
             self.ui.server, 
             urdf, 
@@ -165,7 +202,7 @@ class UserSession:
         
         # 移除URDF可视化场景节点
         frame_name = f"{self.namespace}/robot_frame_{robot_name}"
-        root_node_name = f"{frame_name}/base_link_{robot_name}"
+        root_node_name = f"{frame_name}/{robot_name}"
         try:
             # 删除场景节点（这会删除整个URDF树）
             self.ui.server.scene.remove_by_name(root_node_name)
@@ -184,13 +221,222 @@ class UserSession:
         if robot_name in self.ik_solvers:
             del self.ik_solvers[robot_name]
 
-    # TODO 这里还有工具头, 场景中的工件加载, 以及
+    def load_mobile_car(self, car_name: str):
+        """加载移动小车"""
+        try:
+            # 构建移动小车模型路径
+            car_path = SCENE_DIR / "mobile"  / "car.stl"
+            if car_path.exists():
+                mesh = trimesh.load_mesh(str(car_path))
+                mesh.apply_scale(0.001)
+            
+                # 获取位置和旋转配置，并转换为 numpy array
+                position, wxyz = self.get_position(car_name, "mobile_car")
+                car_handle = self.ui.server.scene.add_mesh_simple(
+                    name=f"{self.namespace}/{car_name}",
+                    vertices=mesh.vertices,
+                    faces=mesh.faces,
+                    position=position,
+                    wxyz=wxyz,
+                )
+                self.mobile_cars[car_name] = car_handle
+                return True
+        except Exception as e:
+            print(f"加载移动小车模型时出错: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def load_object(self, object_name: str):
+        print(f"加载对象 {object_name}")
+        """加载单个工件对象"""
+        if object_name not in self.objects_config:
+            return
+        
+        object_config = self.objects_config[object_name]
+        object_path = SCENE_DIR / "objects" / f"{object_name}.ply"
+        print(f"对象文件路径: {object_path}")
+        if not object_path.exists():
+            print(f"对象文件不存在: {object_path}")
+            return
+        
+        mesh = trimesh.load_mesh(str(object_path))
+
+        if "attached_robot" in object_config.keys():
+            print(f"对象 {object_name} 附加到机器人 {object_config['attached_robot']}")
+        
+            attached_robot_name = object_config["attached_robot"]
+            
+            # 检查机器人是否存在
+            if attached_robot_name not in self.robots:
+                end_effector_node_name = None
+            else:
+                frame_name = f"{self.namespace}/robot_frame_{attached_robot_name}"
+                root_node_name = f"{frame_name}/{attached_robot_name}"
+                urdf = self.robots[attached_robot_name]._urdf
+                end_effector_link = urdf.robot.links[-1]
+                
+                # 使用与 ViserUrdf 相同的逻辑构建末端执行器链接的节点名称
+                # 直接使用末端执行器链接的 mesh 节点作为父节点
+                if urdf.scene is not None:
+                    # 使用 ViserUrdf 的内部函数来构建节点名称
+                    prefixed_root = f"{root_node_name}/visual"
+                    end_effector_node_name = _viser_name_from_frame(
+                        urdf.scene,
+                        end_effector_link.name,
+                        prefixed_root
+                    )
+                else:
+                    # 如果没有scene，使用简单的名称
+                    end_effector_node_name = f"{root_node_name}/visual/{end_effector_link.name}"
+        else:
+            print(f"对象 {object_name} 没有附加到机器人")
+
+
+        # 将点云添加到viser场景
+        position, wxyz = self.get_position(object_name, "object")
+        print(" node name: ", end_effector_node_name)
+        
+        # 根据是否有附加节点来确定点云的名称
+        if end_effector_node_name is not None:
+            # 附加到末端执行器节点下
+            point_cloud_name = f"{end_effector_node_name}/{object_name}"
+        else:
+            # 独立位置
+            point_cloud_name = f"{self.namespace}/{object_name}"
+        
+        mesh_handle = self.ui.server.scene.add_mesh_simple(
+            name=point_cloud_name,
+            vertices=mesh.vertices,
+            faces=mesh.faces,
+            position=position,
+            wxyz=wxyz,
+        )
+        self.objects[object_name] = mesh_handle
+
+
+    def remove_mobile_car(self, car_name: str):
+        """移除指定的移动小车"""
+        if car_name not in self.mobile_cars:
+            return
+        self.ui.server.scene.remove_by_name(f"{self.namespace}/{car_name}")
+        del self.mobile_cars[car_name]
+
+    def remove_object(self, object_name: str):
+        """移除指定的对象"""
+        if object_name not in self.objects:
+            return
+        self.ui.server.scene.remove_by_name(f"{self.namespace}/{object_name}")
+        del self.objects[object_name]
+
+    def load_urdf(self, robot_name: str, on_slider_change: Optional[Callable[[str, np.ndarray], None]] = None) -> bool:
+        """加载单个机器人的URDF文件
+        
+        Args:
+            robot_name: 机器人名称（对应URDF文件名，不含.urdf扩展名）
+            on_slider_change: slider值变化时的回调函数，参数为(robot_name, joint_config)
+                            如果为None，则使用默认的回调函数
+        
+        Returns:
+            bool: 加载成功返回True，失败返回False
+        """
+        try:
+            # 构建URDF文件路径
+            urdf_path = SCENE_DIR / "urdf" / f"{robot_name}.urdf"
+            
+            # 检查文件是否存在
+            if not urdf_path.exists():
+                print(f"URDF文件不存在: {urdf_path}")
+                return False
+            
+            # 加载URDF文件
+            urdf = URDF.load(str(urdf_path))
+            
+            # 如果没有提供回调函数，使用默认的回调函数
+            if on_slider_change is None:
+                def default_on_slider_change(robot_name: str, joint_config: np.ndarray):
+                    """默认的slider变化回调函数"""
+                    try:
+                        if robot_name in self.robots:
+                            viser_urdf_handle = self.robots[robot_name]
+                            viser_urdf_handle.update_cfg(joint_config)
+                            print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
+                    except Exception as e:
+                        print(f"更新机器人关节配置时出错: {e}")
+                on_slider_change = default_on_slider_change
+            
+            # 添加URDF到场景
+            self.add_urdf(urdf, on_slider_change=on_slider_change)
+            print(f"用户 {self.client.client_id} 加载了机器人: {robot_name}")
+            return True
+            
+        except Exception as e:
+            print(f"加载机器人 {robot_name} 的URDF时出错: {e}")
+            return False
+
+    def load_scene(self):
+        """加载场景：从配置文件读取并加载所有机器人
+        
+        这个方法封装了场景加载的完整逻辑，包括：
+        - 读取配置文件
+        - 定义slider变化回调函数
+        - 加载所有机器人的URDF
+        - 更新按钮状态
+        """
+        if self.is_scene_loaded:
+            return  # 如果场景已经加载，不允许再次加载
+        
+        try:
+            # 先对小车模型进行加载
+            for car_name in self.mobile_car_config.keys():
+                self.load_mobile_car(car_name)
+
+            # 定义slider变化回调函数（内部实现）
+            def on_slider_change(robot_name: str, joint_config: np.ndarray):
+                """当slider值变化时, 更新URDF的关节配置"""
+                try:
+                    if robot_name in self.robots:
+                        viser_urdf_handle = self.robots[robot_name]
+                        viser_urdf_handle.update_cfg(joint_config)
+                        print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
+                except Exception as e:
+                    print(f"更新机器人关节配置时出错: {e}")
+
+            # 加载配置中的所有机器人
+            for robot_name in self.robot_config.keys():
+                self.load_urdf(robot_name, on_slider_change=on_slider_change)
+
+            # 最后加载工件对象
+            for object_name in self.objects_config.keys():
+                self.load_object(object_name)
+            
+            # 标记场景已加载
+            self.is_scene_loaded = True
+            
+            # 禁用加载场景按钮，启用清除场景按钮
+            if self.btn_load_scene is not None:
+                self.btn_load_scene.disabled = True
+            if self.btn_clear_scene is not None:
+                self.btn_clear_scene.disabled = False
+            
+            print(f"用户 {self.client.client_id} 场景加载成功")
+        except Exception as e:
+            print(f"加载场景时出错: {e}")
 
     def clear_scene(self):
-        """清除该用户的所有场景（机器人）"""
+        """清除该用户目前创建的全部的场景 (机器人、移动小车、对象)"""
         robot_names = list(self.robots.keys())
         for robot_name in robot_names:
             self.remove_urdf(robot_name)
+
+
+        # 1.先移除小车, 再移除OBJECTS, 最后移除机器人
+        for car_name in self.mobile_car_config.keys():
+            self.remove_mobile_car(car_name)
+        
+        for object_name in self.objects_config.keys():
+            self.remove_object(object_name)
+
         self.is_scene_loaded = False
         # 更新按钮状态
         if self.btn_load_scene is not None:
@@ -201,12 +447,8 @@ class UserSession:
 
     def cleanup(self):
         """清理该用户的所有资源（用户断开时调用）"""
-        robot_names = list(self.robots.keys())
-        for robot_name in robot_names:
-            self.remove_urdf(robot_name)
-        self.is_scene_loaded = False
-        # 移除该用户的场景按钮
-        self.remove_scene_buttons()
+        self.clear_scene()
+        self.remove_scene_buttons()     # 移除该用户的场景按钮
         print(f"用户 {self.client.client_id} 的所有资源已清理")
 
     def create_robot_sliders(
@@ -343,12 +585,11 @@ class UserSession:
             # 构建末端执行器链接对应的场景节点名称
             # ViserUrdf 使用 {root_node_name}/visual/{link_path} 格式来创建 mesh 节点
             frame_name = f"{self.namespace}/robot_frame_{robot_name}"
-            root_node_name = f"{frame_name}/base_link_{robot_name}"
+            root_node_name = f"{frame_name}/{robot_name}"
             
             # 使用与 ViserUrdf 相同的逻辑构建末端执行器链接的节点名称
             # 直接使用末端执行器链接的 mesh 节点作为父节点
             if urdf.scene is not None:
-                from viser.extras._urdf import _viser_name_from_frame
                 # 使用 ViserUrdf 的内部函数来构建节点名称
                 prefixed_root = f"{root_node_name}/visual"
                 end_effector_node_name = _viser_name_from_frame(

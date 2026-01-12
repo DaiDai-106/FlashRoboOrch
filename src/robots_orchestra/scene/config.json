@@ -1,4 +1,32 @@
 {
+    "mobile_car": {
+        "tianji_car": {
+            "position": [
+                5.0,
+                -2.5,
+                -0.4
+            ],
+            "rotation": [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        "fanuc_car": {
+            "position": [
+                5.0,
+                -4.0,
+                -0.4
+            ],
+            "rotation": [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        }
+    },
     "robot_positions": {
         "abb_irb6700_150_320": {
             "position": [
@@ -29,16 +57,17 @@
     },
     "objects": {
         "steel_frame": {
+            "attached_robot": "abb_irb6700_150_320",
             "position": [
                 0.0,
                 0.0,
                 0.0
             ],
             "rotation": [
-                1.0,
+                0.7071068,
+                0,
                 0.0,
-                0.0,
-                0.0
+                0.7071068
             ]
         }
     }

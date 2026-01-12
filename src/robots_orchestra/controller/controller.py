@@ -1,11 +1,5 @@
 import viser
-import os
-import json
-import numpy as np
-from yourdfpy import URDF
 from typing import Dict
-
-from robots_orchestra import SCENE_DIR
 from robots_orchestra.controller.usr_session import UserSession
 from robots_orchestra.viz.viser import ViserUI
 
@@ -62,55 +56,8 @@ class Controller:
 
     def handle_load_scene(self, session: UserSession, event: viser.GuiEvent[viser.GuiButtonHandle]):
         """处理加载场景按钮事件"""
-        client = session.client
-        
-        if session.is_scene_loaded:
-            return  # 如果场景已经加载，不允许再次加载
-        
-        try:
-            config_path = SCENE_DIR / "config.json"
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-            
-            robot_positions = config.get("robot_positions", {})
-            
-            # 定义slider变化回调函数
-            def on_slider_change(robot_name: str, joint_config: np.ndarray):
-                """当slider值变化时, 更新URDF的关节配置"""
-                try:
-                    if robot_name in session.robots:
-                        viser_urdf_handle = session.robots[robot_name]
-                        viser_urdf_handle.update_cfg(joint_config)
-                        print(f"用户 {client.client_id} 的机器人 {robot_name} 关节配置已更新")
-                except Exception as e:
-                    print(f"更新机器人关节配置时出错: {e}")
-            
-            # 加载配置中的所有机器人
-            for robot_name in robot_positions.keys():
-                urdf_path = SCENE_DIR / "urdf" / f"{robot_name}.urdf"
-                if urdf_path.exists():
-                    urdf = URDF.load(str(urdf_path))
-                    session.add_urdf(urdf, on_slider_change=on_slider_change)
-                    print(f"用户 {client.client_id} 加载了机器人: {robot_name}")
-
-
-
-            # TODO 这里还用工具头和工件的加载
-            
-
-            
-            # 标记场景已加载
-            session.is_scene_loaded = True
-            
-            # 禁用加载场景按钮，启用清除场景按钮
-            if session.btn_load_scene is not None:
-                session.btn_load_scene.disabled = True
-            if session.btn_clear_scene is not None:
-                session.btn_clear_scene.disabled = False
-            
-            print(f"用户 {client.client_id} 场景加载成功")
-        except Exception as e:
-            print(f"加载场景时出错: {e}")
+        # 直接调用session的load_scene方法，所有逻辑都在UserSession内部处理
+        session.load_scene()
 
     def handle_clear_scene(self, session: UserSession, event: viser.GuiEvent[viser.GuiButtonHandle]):
         """处理清除场景按钮事件"""
