@@ -709,7 +709,7 @@ class UserSession:
                 name=controls_name,
                 position=(0.0, 0.0, 0.0),  # 相对于父节点的位置（原点）
                 wxyz=(1.0, 0.0, 0.0, 0.0),  # 无旋转（单位四元数）
-                scale=0.5,
+                scale=0.3,
                 visible=True,
                 disable_axes=False,
                 disable_rotations=False,
@@ -829,9 +829,8 @@ class UserSession:
                 return
             
             # 找到base链接（通常是第一个链接）
-            base_link = urdf.robot.links[0]
-            
-            # 构建base链接对应的场景节点名称
+            base_link = urdf.robot.links[1]
+    
             # ViserUrdf 使用 {root_node_name}/visual/{link_path} 格式来创建 mesh 节点
             frame_handle = self.mobile_car_frames[car_name]
             frame_name = frame_handle.name
