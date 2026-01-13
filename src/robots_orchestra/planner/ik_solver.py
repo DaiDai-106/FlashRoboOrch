@@ -57,5 +57,8 @@ class IKSolver:
         elif self.robot_type == "abb_irb6700_150_320":
             self.dof = 6
             self.solver = ampl.ArmBase("abb_irb6700_150_320", ampl.ArmType.Industrial6, 6)
+        elif self.robot_type == "franke_fr3":
+            self.dof = 7
+            self.solver = ampl.ArmBase("franka_fr3", ampl.ArmType.FR7, 7)
         else:
             raise ValueError(f"Unsupport robot type: {self.robot_type}")

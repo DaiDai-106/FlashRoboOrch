@@ -32,6 +32,7 @@ class UserSession:
         self.mobile_car_frames: Dict[str, Any] = {} # 存储该用户每个移动小车的基座base frame（用于设置位置）
         self.robot_sliders: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的关节slider控件, 结构: {robot_name: {folder, sliders, actuated_joints}}
         self.end_effector_controls: Dict[str, Dict[str, Any]] = {} # 存储该用户每个机器人的末端执行器轨道工具, 结构: {robot_name: {controls, controls_name, ik_solver, current_joint_config}}
+        self.mobile_car_controls: Dict[str, Dict[str, Any]] = {} # 存储该用户每个移动小车的base轨道工具, 结构: {car_name: {controls, controls_name, frame}}
         self.ik_solvers: Dict[str, IKSolver] = {} # 存储该用户的IK求解器（按机器人名称）
         
         # 存储规划轨迹（用于仿真回放）
@@ -230,7 +231,8 @@ class UserSession:
             self.create_end_effector_orbit_tool(entity_name, urdf, default_joint)
             self.create_robot_sliders(entity_name, urdf, on_slider_change)
         elif entity_type == "mobile_car":
-            pass
+            # 移动小车：创建base orbit tool
+            self.create_base_orbit_tool(entity_name, urdf)
 
     def remove_urdf(self, entity_name: str, entity_type: str) -> None:
         """移除指定的URDF机器人或移动小车及其所有相关资源
@@ -249,6 +251,10 @@ class UserSession:
         # 移除末端执行器轨道工具（仅机器人有）
         if entity_name in self.end_effector_controls:
             self.remove_end_effector_controls(entity_name)
+        
+        # 移除base轨道工具（仅移动小车有）
+        if entity_name in self.mobile_car_controls:
+            self.remove_base_orbit_tool(entity_name)
         
         # 移除slider控件
         if entity_name in self.robot_sliders:
@@ -814,6 +820,146 @@ class UserSession:
         
         del self.end_effector_controls[robot_name]
 
+    def create_base_orbit_tool(self, car_name: str, urdf: URDF):
+        """在移动小车base链接位置创建轨道工具Orbit tool"""
+        try:
+            links = list(urdf.link_map.keys())
+            if not links:
+                print(f"警告: 无法找到URDF的链接")
+                return
+            
+            # 找到base链接（通常是第一个链接）
+            base_link = urdf.robot.links[0]
+            
+            # 构建base链接对应的场景节点名称
+            # ViserUrdf 使用 {root_node_name}/visual/{link_path} 格式来创建 mesh 节点
+            frame_handle = self.mobile_car_frames[car_name]
+            frame_name = frame_handle.name
+            root_node_name = f"{frame_name}/{car_name}"
+            
+            # 使用与 ViserUrdf 相同的逻辑构建base链接的节点名称
+            if urdf.scene is not None:
+                # 使用 ViserUrdf 的内部函数来构建节点名称
+                prefixed_root = f"{root_node_name}/visual"
+                base_node_name = _viser_name_from_frame(
+                    urdf.scene,
+                    base_link.name,
+                    prefixed_root
+                )
+            else:
+                # 如果没有scene，使用简单的名称
+                base_node_name = f"{root_node_name}/{car_name}/visual/{base_link.name}"
+            
+            # 将轨道工具添加到base链接的mesh节点下（作为子节点）
+            controls_name = f"{base_node_name}/orbit_controls"
+            
+            # 添加交互式变换控件，作为base链接的子节点
+            # 使用单位变换（轨道工具就在base位置）
+            controls_handle = self.ui.server.scene.add_transform_controls(
+                name=controls_name,
+                position=(0.0, 0.0, 0.0),  # 相对于父节点的位置（原点）
+                wxyz=(1.0, 0.0, 0.0, 0.0),  # 无旋转（单位四元数）
+                scale=0.5,
+                visible=True,
+                disable_axes=False,
+                disable_rotations=False,
+                disable_sliders=True,
+            )
+            
+            # 存储引用
+            self.mobile_car_controls[car_name] = {
+                "controls": controls_handle,
+                "controls_name": controls_name,
+                "car_name": car_name,
+                "frame": frame_handle,
+            }
+            
+            # 监听变换控件的更新事件
+            @controls_handle.on_update
+            def on_controls_update(event: viser.TransformControlsEvent):
+                """当用户拖动轨道工具时，更新移动小车的位置和姿态"""
+                try:
+                    # 轨道工具现在是base链接的子节点
+                    # new_position 和 new_rotation 是相对于base链接的
+                    new_position_rel = event.target.position
+                    new_rotation_rel = event.target.wxyz  # (w, x, y, z)
+                    
+                    car_info = self.mobile_car_controls[car_name]
+                    frame_handle = car_info["frame"]
+                    
+                    # 获取frame当前的世界变换
+                    # frame的位置和旋转是相对于世界坐标系的
+                    current_position = np.array(frame_handle.position, dtype=np.float64)
+                    current_rotation = np.array(frame_handle.wxyz, dtype=np.float64)  # (w, x, y, z)
+                    
+                    # 构建当前frame的世界变换矩阵
+                    qt7_frame_world = np.array([
+                        current_rotation[1],  # qx
+                        current_rotation[2],  # qy
+                        current_rotation[3],  # qz
+                        current_rotation[0],  # qw
+                        current_position[0],  # x
+                        current_position[1],  # y
+                        current_position[2]   # z
+                    ], dtype=np.float64)
+                    tf_frame_world = ampl.qt7_to_tf44(qt7_frame_world)
+                    
+                    # 构建轨道工具相对于base链接的变换矩阵
+                    qt7_controls_rel = np.array([
+                        new_rotation_rel[1],  # qx
+                        new_rotation_rel[2],  # qy
+                        new_rotation_rel[3],  # qz
+                        new_rotation_rel[0],  # qw
+                        new_position_rel[0],  # x
+                        new_position_rel[1],  # y
+                        new_position_rel[2]   # z
+                    ], dtype=np.float64)
+                    tf_controls_rel = ampl.qt7_to_tf44(qt7_controls_rel)
+                    
+                    # 计算轨道工具相对于世界坐标系的绝对变换
+                    tf_controls_world = tf_frame_world @ tf_controls_rel
+                    
+                    # 提取世界坐标系下的位置和旋转
+                    qt7_controls_world = ampl.tf44_to_qt7(tf_controls_world)
+                    
+                    # 更新frame的位置和姿态
+                    new_position_world = (
+                        float(qt7_controls_world[4]),
+                        float(qt7_controls_world[5]),
+                        float(qt7_controls_world[6])
+                    )
+                    new_rotation_world = (
+                        float(qt7_controls_world[3]),  # w
+                        float(qt7_controls_world[0]),  # x
+                        float(qt7_controls_world[1]),  # y
+                        float(qt7_controls_world[2])   # z
+                    )
+                    
+                    # 更新frame
+                    frame_handle.position = new_position_world
+                    frame_handle.wxyz = new_rotation_world
+                    
+                except Exception as e:
+                    print(f"更新移动小车可视化时出错: {e}")
+            
+        except Exception as e:
+            print(f"创建移动小车base轨道工具时出错: {e}")
+    
+    def remove_base_orbit_tool(self, car_name: str):
+        """移除指定移动小车的base轨道工具"""
+        if car_name not in self.mobile_car_controls:
+            return
+        
+        # 移除场景中的控件（通过删除场景节点）
+        car_info = self.mobile_car_controls[car_name]
+        controls_name = car_info["controls_name"]
+        try:
+            # 尝试通过场景API删除
+            self.ui.server.scene.remove_by_name(controls_name)
+        except Exception as e:
+            print(f"删除移动小车base控件时出错: {e}")
+        
+        del self.mobile_car_controls[car_name]
 
     def abb_offline_planning(self):
         """ABB框架移动离线规划
