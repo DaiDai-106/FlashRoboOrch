@@ -174,9 +174,28 @@ class UserSession:
 
         # 获取位置配置（根据entity_type）
         position, rotation = self.get_position(entity_name, entity_type)
-        
+
+        frame_name = None
         # 创建实体的base frame（用于设置位置）
-        frame_name = f"{self.namespace}/{entity_type}_frame_{entity_name}"  # 使用统一的命名格式
+        if entity_type == "robot" and "attached_car" in self.robot_config[entity_name].keys():
+            attached_car_name = self.robot_config[entity_name]["attached_car"]
+            if attached_car_name in self.mobile_cars:
+                attached_car_urdf = self.mobile_cars[attached_car_name]._urdf
+                end_effector_link = attached_car_urdf.robot.links[-1]
+                if attached_car_urdf.scene is not None:
+                    prefixed_root = f"{self.namespace}/mobile_car_frame_{attached_car_name}/{attached_car_name}/visual"
+                    end_effector_node_name = _viser_name_from_frame(
+                        attached_car_urdf.scene,
+                        end_effector_link.name,
+                        prefixed_root
+                    )
+                    frame_name = f"{end_effector_node_name}/{entity_type}_frame_{entity_name}"
+            else:
+                print(f"警告: 移动小车 {attached_car_name} 不存在")
+                return
+        else:
+            frame_name = f"{self.namespace}/{entity_type}_frame_{entity_name}"  # 使用统一的命名格式
+
         entity_frame = self.ui.server.scene.add_frame(
             name=frame_name,
             show_axes=False,  # 不显示坐标轴
@@ -209,10 +228,9 @@ class UserSession:
         if entity_type == "robot":
             # 机器人：创建所有控件（slider和末端执行器工具）
             self.create_end_effector_orbit_tool(entity_name, urdf, default_joint)
+            self.create_robot_sliders(entity_name, urdf, on_slider_change)
         elif entity_type == "mobile_car":
             pass
-
-        self.create_robot_sliders(entity_name, urdf, on_slider_change)
 
     def remove_urdf(self, entity_name: str, entity_type: str) -> None:
         """移除指定的URDF机器人或移动小车及其所有相关资源
@@ -282,8 +300,6 @@ class UserSession:
             return True
         except Exception as e:
             print(f"加载移动小车模型时出错: {e}")
-            import traceback
-            traceback.print_exc()
             return False
 
     def load_object(self, object_name: str):
@@ -352,7 +368,6 @@ class UserSession:
             wxyz=wxyz,
         )
         self.objects[object_name] = mesh_handle
-
 
     def remove_mobile_car(self, car_name: str):
         """移除指定的移动小车（现在使用URDF方式，统一使用remove_urdf处理）"""
@@ -443,7 +458,7 @@ class UserSession:
                         update_sliders=False,  # slider已经更新了，不需要再次更新
                         update_end_effector_state=True  # 更新末端执行器状态
                     )
-                    print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
+                    # print(f"用户 {self.client.client_id} 的机器人 {robot_name} 关节配置已更新")
                 except Exception as e:
                     print(f"更新机器人关节配置时出错: {e}")
 
@@ -662,14 +677,14 @@ class UserSession:
 
             # 构建末端执行器链接对应的场景节点名称
             # ViserUrdf 使用 {root_node_name}/visual/{link_path} 格式来创建 mesh 节点
-            frame_name = f"{self.namespace}/robot_frame_{robot_name}"
-            root_node_name = f"{frame_name}/{robot_name}"
+            root_node_name = self.robot_frames[robot_name].name
+            print(f"root_node_name: {root_node_name}")
             
             # 使用与 ViserUrdf 相同的逻辑构建末端执行器链接的节点名称
             # 直接使用末端执行器链接的 mesh 节点作为父节点
             if urdf.scene is not None:
                 # 使用 ViserUrdf 的内部函数来构建节点名称
-                prefixed_root = f"{root_node_name}/visual"
+                prefixed_root = f"{root_node_name}/{robot_name}/visual"
                 end_effector_node_name = _viser_name_from_frame(
                     urdf.scene,
                     end_effector_link.name,
@@ -768,13 +783,14 @@ class UserSession:
                         self.update_robot_visualization(
                             robot_name,
                             new_joint_config,
-                            update_sliders=True,  # 拖动末端执行器时，同步更新slider
+                            update_sliders=False,  # 拖动末端执行器时，同步更新slider
                             update_end_effector_state=True  # 更新末端执行器状态
                         )
                         
-                        print(f"用户 {self.client.client_id} 的机器人 {robot_name} 逆解成功")
+                        # print(f"用户 {self.client.client_id} 的机器人 {robot_name} 逆解成功")
                     else:
-                        print(f"用户 {self.client.client_id} 的机器人 {robot_name} 逆解失败，无解")
+                        pass
+                        # print(f"用户 {self.client.client_id} 的机器人 {robot_name} 逆解失败，无解")
                         
                 except Exception as e:
                     print(f"更新机械臂可视化时出错: {e}")

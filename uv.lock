@@ -4,13 +4,13 @@ requires-python = "==3.11.*"
 
 [[package]]
 name = "ampl"
-version = "0.0.14"
-source = { path = "third_party/ampl-0.0.14-cp311-cp311-linux_x86_64.whl" }
+version = "0.0.17"
+source = { path = "third_party/ampl-0.0.17-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" }
 dependencies = [
     { name = "numpy" },
 ]
 wheels = [
-    { filename = "ampl-0.0.14-cp311-cp311-linux_x86_64.whl", hash = "sha256:dbdbca34cf0934bc4f6723dadcac2de346301ac64e20b1ff89a8240a64e8ced3" },
+    { filename = "ampl-0.0.17-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:3fadc487949c4aef2f17953f105646d934b4bbab90f4f0feb740a4ba62a1b369" },
 ]
 
 [package.metadata]
@@ -178,7 +178,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ampl", path = "third_party/ampl-0.0.14-cp311-cp311-linux_x86_64.whl" },
+    { name = "ampl", path = "third_party/ampl-0.0.17-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl" },
     { name = "fastapi", specifier = "==0.123.5" },
     { name = "flash-models", git = "ssh://git@gitlab.roboticplus.com/flash/flashdata.git?rev=f41b4d9f" },
     { name = "numpy", specifier = "==2.2.6" },

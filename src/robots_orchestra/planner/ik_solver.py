@@ -51,7 +51,7 @@ class IKSolver:
     
     # 根据不同的类型对逆解服务进行初始化
     def init_solver(self):
-        if self.robot_type == "fanuc_crx10ia":
+        if self.robot_type == "left_fanuc_crx10ia" or self.robot_type == "right_fanuc_crx10ia":
             self.dof = 6
             self.solver = ampl.ArmBase("fanuc_crx10ia", ampl.ArmType.CRX6, 6)
         elif self.robot_type == "abb_irb6700_150_320":
