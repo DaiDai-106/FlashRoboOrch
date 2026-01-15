@@ -22,6 +22,12 @@ class Controller:
         @self.ui.abb_offline_planning.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
             self.handle_abb_offline_planning(event)
+        
+        
+        # 焊缝定位拍照
+        @self.ui.franka_capture.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_franka_capture(event)
 
     #----- UI 事件处理 ------------------------------------------------------------
 
@@ -80,6 +86,18 @@ class Controller:
         
         session = self.sessions[client]
         session.abb_offline_planning()
+
+
+
+    def handle_franka_capture(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理焊接定位拍照按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        
+        session = self.sessions[client]
+        session.franka_capture()
 
     def run(self):
         """运行控制器"""

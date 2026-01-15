@@ -4,6 +4,7 @@ import json
 import numpy as np
 import ampl
 import trimesh
+import cv2 as cv
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 from robots_orchestra.viz.viser import ViserUI
@@ -48,6 +49,9 @@ class UserSession:
         # 初始化部分功能
         self.btn_load_scene: Optional[Any] = None # 存储该用户的场景加载按钮控件
         self.btn_clear_scene: Optional[Any] = None # 存储该用户的场景清除按钮控件
+
+        # TODO 每一个用户加载时, 还是可以和服务进行共用的
+
         self.create_scene_buttons() # 为每个用户创建独立的场景加载按钮
     
     # --------------------------------------------------------- 按钮创建和移除 ---------------------------------------------------------
@@ -562,7 +566,7 @@ class UserSession:
             
             # 在"机器人拖动"文件夹下创建机器人名称的子文件夹
             with self.ui.robot_drag_folder:
-                robot_folder = self.ui.server.gui.add_folder(robot_name)
+                robot_folder = self.ui.server.gui.add_folder(robot_name, expand_by_default = False)
                 joint_sliders = {}
                 
                 # 定义更新函数，用于所有slider共享
@@ -1016,6 +1020,20 @@ class UserSession:
                     update_end_effector_state=True
                 )
         print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(self.abb_trajectory)}")
+
+
+    def franka_capture(self):
+        """焊接定位拍照"""
+        print(f"已为用户 {self.client.client_id} 执行焊接定位拍照")
+        # 读取焊接定位拍照图片
+        franka_capture_image = cv.imread("/home/wangyf/Downloads/医生护士.png")
+        franka_capture_image = cv.cvtColor(franka_capture_image, cv.COLOR_BGR2RGB)
+        with self.ui.franka_capture_pcl:
+            img_handle = self.ui.server.gui.add_image(
+                image=franka_capture_image,          # H×W×3 uint8
+                label="焊接定位拍照",
+                order=1,
+            )
     
     def update_robot_visualization(self, entity_name: str, joint_config: np.ndarray, update_sliders: bool = True, update_end_effector_state: bool = True):
         """统一的可视化更新回调函数，兼容所有情况（机器人和移动小车）
