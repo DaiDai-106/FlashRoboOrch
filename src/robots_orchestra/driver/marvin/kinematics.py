@@ -184,7 +184,7 @@ class Marvin_Kine:
         elif sys.platform == "darwin":  # macOS
             self.kine = ctypes.CDLL(os.path.join(current_path, "libKine.dylib"))
         else:  # Linux and other Unix-like systems
-            self.kine = ctypes.CDLL(os.path.join(current_path, "libKine.so"))
+            self.kine = ctypes.CDLL(os.path.join(current_path, "lib/libKine.so"))
 
         # 创建结构体实例
         self.sp = FX_InvKineSolvePara()
@@ -539,7 +539,7 @@ class Marvin_Kine:
             for i in range(4):
                 for j in range(4):
                     fk_mat[i][j] = pg[i][j]
-            # logger.info(f'fk result, matrix:{fk_mat}')
+            logger.info(f'fk result, matrix:{fk_mat}')
             return fk_mat
         else:
             return False
@@ -867,6 +867,8 @@ class Marvin_Kine:
         //	LOAD_IDEN_DataSmpErr = 4 // Data sample error 采集时间不够，缺少有效数据
         //}LoadIdenErrCode;
         """
+
+        print(f'ipath:{ipath}')
         if type(robot_type) != int:
             raise ValueError("robot_type must be int type")
 

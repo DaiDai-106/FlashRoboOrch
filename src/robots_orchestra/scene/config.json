@@ -1,4 +1,32 @@
 {
+    "mobile_car": {
+        "tianji_car": {
+            "position": [
+                0.0,
+                0.0,
+                0.0
+            ],
+            "rotation": [
+                1.0,
+                0.0,
+                0.0,
+                0.0
+            ]
+        },
+        "fanuc_car": {
+            "position": [
+                5.0,
+                -5.0,
+                -0.4
+            ],
+            "rotation": [
+                0.0,
+                0.0,
+                0.0,
+                1.0
+            ]
+        }
+    },
     "robot_positions": {
         "abb_irb6700_150_320": {
             "position": [
@@ -13,32 +41,90 @@
                 0.0
             ]
         },
-        "fanuc_crx10ia": {
+        "left_fanuc_crx10ia": {
+            "attached_car": "fanuc_car",
             "position": [
-                3.5,
-                1.5,
-                0.6
+                0.336505,
+                0.264645,
+                0.764645
             ],
             "rotation": [
+                0.2705981,
+                -0.6532815,
+                0.6532815,
+                0.2705981
+            ]
+        },
+        "right_fanuc_crx10ia": {
+            "attached_car": "fanuc_car",
+            "position": [
+                0.318538,
+                -0.266082,
+                0.766082
+            ],
+            "rotation": [
+                0.2705981,
+                0.6532815,
+                -0.6532815,
+                0.2705981
+            ]
+        },
+        "franke_fr3": {
+            "attached_car": "fanuc_car",
+            "position": [
+                0.303835,
                 0.0,
-                0.0,
-                0.0,
-                1.0
+                1
+            ],
+            "rotation": [
+                1,
+                0,
+                0,
+                0
+            ]
+        },
+        "left_tianji": {
+            "attached_car": "tianji_car",
+            "position": [
+                0.047561,
+                0.02575,
+                0.621244
+            ],
+            "rotation": [
+                0.7071068,
+                -0.7071068,
+                0,
+                0
+            ]
+        },
+        "right_tianji": {
+            "attached_car": "tianji_car",
+            "position": [
+                0.047561,
+                -0.036621,
+                0.621244
+            ],
+            "rotation": [
+                0.7071068, 
+                0.7071068,
+                0,
+                0
             ]
         }
     },
     "objects": {
         "steel_frame": {
+            "attached_robot": "abb_irb6700_150_320",
             "position": [
                 0.0,
                 0.0,
                 0.0
             ],
             "rotation": [
-                1.0,
+                0.7071068,
+                0,
                 0.0,
-                0.0,
-                0.0
+                0.7071068
             ]
         }
     }

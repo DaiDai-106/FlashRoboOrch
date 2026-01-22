@@ -254,9 +254,11 @@ class DH_AG:
 
 def main():
     dh_ag = DH_AG()
-    dh_ag.init_1()
-    sleep(0.5)
+    # dh_ag.init_1()
+    # sleep(0.5)
     # dh_ag.save_para()
+    # sleep(3)
+    # return
 
     dh_ag.set_force(100)
     sleep( 0.5 )

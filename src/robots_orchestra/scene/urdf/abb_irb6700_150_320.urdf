@@ -199,6 +199,12 @@
     <child link="link_6"/>
     <limit default="0" effort="0" lower="-6.283185307179586" upper="6.283185307179586" velocity="3.3161255787892263"/>
   </joint>
+  <link name="tool0"/>
+  <joint name="tool0_joint" type="fixed">
+    <origin rpy="0 1.5707963267948966 0" xyz="0 0 0"/>
+    <parent link="link_6"/>
+    <child link="tool0"/>
+  </joint>
   <!-- end of joint list -->
   <!-- ROS-Industrial 'flange' frame: attachment point for EEF models -->
  

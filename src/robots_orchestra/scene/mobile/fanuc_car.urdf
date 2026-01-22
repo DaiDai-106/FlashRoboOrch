@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<robot name="fanuc_car">
+  <link name="base_link"/>
+  <link name="move_x_link"/>
+  <joint name="joint_1" type="fixed">
+    <origin xyz="-0.234969 -0.493283 0.497258" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="move_x_link" />
+  </joint>
+  <link name="move_y_link"/>
+  <joint name="joint_2" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="move_x_link" />
+    <child link="move_y_link" />
+  </joint>
+  <link name="car_link">
+    <visual>
+      <origin xyz="0.234969 0.493283 -0.497258" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="mesh/car.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name=""><color rgba="1 0 0 1" /></material>
+    </visual>
+    <collision>
+      <origin xyz="0.234969 0.493283 -0.497258" rpy="0 0 0" />
+      <geometry>
+        <mesh filename="mesh/car.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_3" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="move_y_link" />
+    <child link="car_link" />
+  </joint>
+  <link name="car_base">
+    <visual>
+      <geometry>
+        <mesh filename="mesh/fanuc_base.stl" scale="0.001 0.001 0.001" />
+      </geometry>
+      <material name=""><color rgba="1 0 0 1" /></material>
+    </visual>
+    <collision>
+      <geometry>
+        <mesh filename="meshes/fanuc_base.stl" scale="0.001 0.001 0.001"/>
+      </geometry>
+    </collision>
+  </link>
+  <joint name="joint_4" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 0" />
+    <parent link="car_link" />
+    <child link="car_base" />
+  </joint>
+</robot>
