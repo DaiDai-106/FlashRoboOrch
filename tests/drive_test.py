@@ -163,13 +163,11 @@ while not face_touch:
     #在Y轴方向有个10N的力一直压着手臂,相对于基座,末端往下压了5厘米的效果， 上下拖动手臂试试， 手臂像弹簧一样会回到原来的位置。力控阻抗下更柔顺
     robot.set_force_cmd(arm='A',f= 5)
     robot.send_cmd()
-    time.sleep(1)
+    time.sleep(0.5)
 
     sub_data=robot.subscribe(dcss)
     # logger.info(f'set force = {sub_data["outputs"][0]["est_joint_force"]}')
     current_joints = getJointData( sub_data, 0 )
-    time.sleep(0.2)
-
     curent_transform = fk( current_joints)
     distance = calculate(transform, curent_transform)
     print(f'distance: {distance}')
@@ -200,7 +198,7 @@ while not z_touch or not y_touch:
     y_touch = False
     if not z_touch:
         robot.clear_set()
-        robot.set_force_control_params(arm='A',fcType=0, fxDirection=[0, 0, 1, 0, 0, 0], fcCtrlpara=[0, 0, 0, 0, 0, 0, 0],
+        robot.set_force_control_params(arm='A',fcType=0, fxDirection=[1, 0, 0, 0, 0, 0], fcCtrlpara=[0, 0, 0, 0, 0, 0, 0],
                                                 fcAdjLmt=10)
         robot.send_cmd()
         time.sleep(0.5)
@@ -211,7 +209,7 @@ while not z_touch or not y_touch:
         #在Y轴方向有个10N的力一直压着手臂,相对于基座,末端往下压了5厘米的效果， 上下拖动手臂试试， 手臂像弹簧一样会回到原来的位置。力控阻抗下更柔顺
         robot.set_force_cmd(arm='A',f=20)
         robot.send_cmd()
-        time.sleep(2)
+        time.sleep(1)
 
         sub_data=robot.subscribe(dcss)
         current_joints = getJointData( sub_data, 0 )
@@ -240,7 +238,6 @@ while not z_touch or not y_touch:
 
         sub_data=robot.subscribe(dcss)
         current_joints = getJointData( sub_data, 0 )
-        time.sleep(0.2)
         curent_transform = fk( current_joints)
         distance = calculate(transform, curent_transform)
         print(f'distance: {distance}')
