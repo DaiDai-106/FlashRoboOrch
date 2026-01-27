@@ -29,6 +29,11 @@ class Controller:
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
             self.handle_franka_capture(event)
 
+        # Marvin左臂拍照任务
+        @self.ui.left_marvin_capture.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_left_marvin_capture(event)
+
     #----- UI 事件处理 ------------------------------------------------------------
 
     def handle_connect(self, client: viser.ClientHandle):
@@ -98,6 +103,16 @@ class Controller:
         
         session = self.sessions[client]
         session.franka_capture()
+
+    def handle_left_marvin_capture(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理Marvin左臂拍照按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        
+        session = self.sessions[client]
+        session.left_marvin_capture()
 
     def run(self):
         """运行控制器"""

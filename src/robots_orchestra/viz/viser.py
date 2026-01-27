@@ -50,14 +50,9 @@ class ViserUI:
                 self.abb_view_simulation = self.server.gui.add_folder("查看仿真")  
                 self.abb_execute = self.server.gui.add_button("任务执行", icon=viser.Icon.HAND_MOVE)
 
-            with self.server.gui.add_folder("电焊线配置任务", expand_by_default = False):
-                pass
-                # self.marvin_go_station = self.server.gui.add_button("ABB 框架移动", icon=viser.Icon.MOUSE)
-                # self.abb_view_simulation = self.server.gui.add_folder("查看仿真")  # 创建"查看仿真"文件夹，用于显示仿真界面
-
-
-            with self.server.gui.add_folder("工件装配任务", expand_by_default = False):
-                pass
+            with self.server.gui.add_folder("工件装配任务"):
+                with self.server.gui.add_folder("Marvin左臂抓取工件", expand_by_default = False):
+                    self.left_marvin_capture = self.server.gui.add_button("Marvin相机识别", icon=viser.Icon.CAMERA)
                 # self.marvin_go_home = self.server.gui.add_button("回到加工台", icon=viser.Icon.HAND_MOVE)
                 # self.marvin_capture = self.server.gui.add_button("定位加持工件", icon=viser.Icon.CAPTURE)
                 # self.marvin_show_capture_pcl = self.server.gui.add_checkbox("显示定位点云", initial_value=False)

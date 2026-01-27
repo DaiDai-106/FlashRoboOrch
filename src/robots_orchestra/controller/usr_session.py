@@ -1,3 +1,4 @@
+from numpy._core.multiarray import scalar
 import viser
 import time
 import json
@@ -5,6 +6,7 @@ import numpy as np
 import ampl
 import trimesh
 import cv2 as cv
+import requests
 from pathlib import Path
 from typing import Dict, Any, Optional, Callable
 from robots_orchestra.viz.viser import ViserUI
@@ -13,14 +15,16 @@ from yourdfpy import URDF
 from robots_orchestra.planner.ik_solver import IKSolver
 from robots_orchestra.planner.planner import Planner
 from robots_orchestra import SCENE_DIR
+from robots_orchestra import CAMERA_CACHE_DIR
 from viser.extras._urdf import _viser_name_from_frame
+from robots_orchestra.controller.utils import download_camera_images
+from robots_orchestra.controller.utils import depth2pcd
 
 # 用户会话，负责管理每个用户的所有私有资源
 class UserSession:
     def __init__(self, client: viser.ClientHandle, viser_ui: ViserUI):
         self.ui = viser_ui
         self.client = client
-
 
         self.is_scene_loaded = False # 场景加载状态标志
 
@@ -1021,6 +1025,101 @@ class UserSession:
                 )
         print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(self.abb_trajectory)}")
 
+    def left_marvin_capture(self):
+        """Marvin左臂拍照"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂拍照")
+        API_COLOR = "http://192.168.1.183:8005/color"
+        API_DEPTH = "http://192.168.1.183:8005/depth"
+        API_PERCEP =  "http://192.168.1.183:2077"
+        
+        task_id = 'whatever'
+        data_request = {
+            "task_id": task_id,
+        }
+
+        response_color = requests.post(API_COLOR, json=data_request)
+        color_data = response_color.json()
+        print(color_data)
+
+        response_depth = requests.post(API_DEPTH, json=data_request)
+        depth_data = response_depth.json()
+        print(depth_data)
+
+        data_request = {
+                "task_id": task_id,
+                "input": {
+                    'image_dir' : "http://192.168.1.206:9000/storage/whatever/original/color.png",
+                    'option': "general", 
+                    'prompts':'metal',
+                },
+                'setting': {
+                    'mask_url': True,
+                }
+                }
+        response_percep = requests.post(API_PERCEP, json=data_request)
+        percep_data = response_percep.json()
+        print(percep_data)
+
+        
+        # 合并所有响应的数据，统一下载到同一个task_id目录
+        combined_data = {}
+        if color_data and color_data.get('code') == 0:
+            if 'color_url' in color_data:
+                combined_data['color_url'] = color_data['color_url']
+            if 'intrinsic' in color_data:
+                combined_data['intrinsic'] = color_data['intrinsic']
+        
+        if depth_data and depth_data.get('code') == 0:
+            if 'depth_url' in depth_data:
+                combined_data['depth_url'] = depth_data['depth_url']
+            # 如果depth响应中有intrinsic但color响应中没有，使用depth的
+            if 'intrinsic' in depth_data and 'intrinsic' not in combined_data:
+                combined_data['intrinsic'] = depth_data['intrinsic']
+        
+        # 从percep响应中提取mask_url和mask数据
+        mask_data_to_save = None
+        if percep_data:
+            # 检查响应格式：masks数组格式
+            if 'masks' in percep_data and isinstance(percep_data['masks'], list) and len(percep_data['masks']) > 0:
+                # 从masks数组的第一个元素中提取mask_url
+                first_mask = percep_data['masks'][0]
+                if 'mask_url' in first_mask:
+                    combined_data['mask_url'] = first_mask['mask_url']
+                mask_data_to_save = percep_data['masks']
+            # 兼容其他格式
+            elif 'mask_url' in percep_data:
+                combined_data['mask_url'] = percep_data['mask_url']
+            elif 'data' in percep_data and isinstance(percep_data['data'], dict):
+                if 'mask_url' in percep_data['data']:
+                    combined_data['mask_url'] = percep_data['data']['mask_url']
+        
+        # 如果有任何URL，下载图片
+        if combined_data:
+            download_result = download_camera_images(combined_data, task_id)
+            
+            # 保存mask数据到文件（如果有）
+            if mask_data_to_save and download_result and download_result.get('depth_path'):
+                task_dir = download_result['depth_path'].parent
+                mask_data_path = task_dir / "mask_data.json"
+                try:
+                    with open(mask_data_path, 'w') as f:
+                        json.dump(mask_data_to_save, f, indent=2)
+                    print(f"已保存mask数据到: {mask_data_path}")
+                except Exception as e:
+                    print(f"保存mask数据失败: {e}")
+            if download_result['color_success']:
+                print(f"已下载color图片到: {download_result['color_path']}")
+            if download_result['depth_success']:
+                print(f"已下载depth图片到: {download_result['depth_path']}")
+            if download_result['mask_success']:
+                print(f"已下载mask图片到: {download_result['mask_path']}")
+            if download_result['intrinsic_path']:
+                print(f"已下载intrinsic文件到: {download_result['intrinsic_path']}")
+
+        print(f"已为用户 {self.client.client_id} 已经调用点云拍照服务完成了拍照")
+        depth2pcd()
+        self.show_pcd()
+        print(f"已为用户 {self.client.client_id} 已经显示了点云")
 
     def franka_capture(self):
         """焊接定位拍照"""
@@ -1035,6 +1134,80 @@ class UserSession:
                 order=1,
             )
     
+    def show_pcd(self):
+        """显示点云"""
+        print(f"为用户 {self.client.client_id} 显示点云")
+        try:
+            # 构建点云文件路径
+            ply_path = Path(__file__).parent / "camera_cache" / "whatever" / "pcd.ply"
+            pcd_v, pcd_c, _ = ampl.read_pointcloud(ply_path)
+            pcd_c = pcd_c[:, ::-1]
+
+            # 获取left_tianji在viser中的frame的name
+            robot_name = "left_tianji"
+            if robot_name in self.robot_frames:
+                robot_frame = self.robot_frames[robot_name]
+                frame_name = robot_frame.name
+                print(f"找到机器人 {robot_name} 的frame: {frame_name}")
+                
+                # 读取cam_waican.npy变换矩阵
+                cam_cache_dir = Path(__file__).parent / "camera_cache" / "whatever"
+                cam_waican_path = cam_cache_dir / "handeye.npy"
+                
+                if cam_waican_path.exists():
+                    transform_matrix = np.load(cam_waican_path)
+
+                    print(f"读取变换矩阵: {transform_matrix}")
+                    # 计算逆变换
+                    qt7 = ampl.tf44_to_qt7(transform_matrix)
+                    position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+                    wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+                    wxyz = (-0.6196, 0.3239, -0.5997, -0.3892)
+
+                    # 在base frame下创建新的frame A
+                    frame_a_name = f"{frame_name}/cam_frame_A"
+                    frame_a = self.ui.server.scene.add_frame(
+                        name=frame_a_name,
+                        show_axes=True,  # 显示坐标轴以便调试
+                        position=position,
+                        wxyz=wxyz,
+                    )
+                    print(f"创建新frame A: {frame_a_name}, 位置: {position}, 四元数: {wxyz}")
+                    
+                    # 将点云添加到frame A下
+                    point_cloud_name = f"{frame_a_name}/marvin_capture"
+                    self.ui.server.scene.add_point_cloud(
+                        name=point_cloud_name,
+                        points=pcd_v,
+                        colors=pcd_c,
+                        point_size=0.001,  # 点的大小
+                    )
+                    print(f"点云已添加到frame A下: {point_cloud_name}")
+                else:
+                    print(f"警告: 未找到cam_waican.npy文件: {cam_waican_path}，使用默认frame")
+                    # 如果找不到npy文件，直接添加到base frame下
+                    point_cloud_name = f"{frame_name}/marvin_capture"
+                    self.ui.server.scene.add_point_cloud(
+                        name=point_cloud_name,
+                        points=pcd_v,
+                        colors=pcd_c,
+                        point_size=0.1,
+                    )
+                    print(f"点云已添加到frame下: {point_cloud_name}")
+            else:
+                print(f"警告: 未找到机器人 {robot_name} 的frame，使用默认位置")
+                # 如果找不到frame，使用默认位置
+                self.ui.server.scene.add_point_cloud(
+                    name="/world/origin/marvin_capture",
+                    points=pcd_v,
+                    colors=pcd_c,
+                    point_size=0.1,
+                )
+
+            print(f"成功加载Marvin左臂抓取点云: {ply_path}")
+        except Exception as e:
+            print(f"加载实验室点云时出错: {e}")
+
     def update_robot_visualization(self, entity_name: str, joint_config: np.ndarray, update_sliders: bool = True, update_end_effector_state: bool = True):
         """统一的可视化更新回调函数，兼容所有情况（机器人和移动小车）
         

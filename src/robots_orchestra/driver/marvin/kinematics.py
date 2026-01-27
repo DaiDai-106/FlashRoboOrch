@@ -280,6 +280,7 @@ class Marvin_Kine:
         • MDH参数单位为度和毫米（mm），速度加速度单位为度/秒，关节质量、关节质心、关节惯量单位均为国际标准单位
         :return:
         """
+        print(f"config_path:{config_path}")
 
         if not os.path.exists(config_path):
             raise ValueError("no config file")
