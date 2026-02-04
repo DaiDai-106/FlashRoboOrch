@@ -19,6 +19,7 @@ from robots_orchestra import CAMERA_CACHE_DIR
 from viser.extras._urdf import _viser_name_from_frame
 from robots_orchestra.controller.utils import download_camera_images
 from robots_orchestra.controller.utils import depth2pcd
+from robots_orchestra.driver.marvin.robot import DCSS
 
 # 用户会话，负责管理每个用户的所有私有资源
 class UserSession:
@@ -53,7 +54,8 @@ class UserSession:
         # 初始化部分功能
         self.btn_load_scene: Optional[Any] = None # 存储该用户的场景加载按钮控件
         self.btn_clear_scene: Optional[Any] = None # 存储该用户的场景清除按钮控件
-
+        self.marvin_crawl_pose = None
+        self.marvin_first_put_pose = None
         # TODO 每一个用户加载时, 还是可以和服务进行共用的
 
         self.create_scene_buttons() # 为每个用户创建独立的场景加载按钮
@@ -1028,9 +1030,9 @@ class UserSession:
     def left_marvin_capture(self):
         """Marvin左臂拍照"""
         print(f"已为用户 {self.client.client_id} 执行Marvin左臂拍照")
-        API_COLOR = "http://192.168.1.183:8005/color"
-        API_DEPTH = "http://192.168.1.183:8005/depth"
-        API_PERCEP =  "http://192.168.1.183:2077"
+        API_COLOR = "http://127.0.0.1:8005/color"
+        API_DEPTH = "http://127.0.0.1:8005/depth"
+        API_PERCEP =  "http://127.0.0.1:8005"
         
         task_id = 'whatever'
         data_request = {
@@ -1208,6 +1210,591 @@ class UserSession:
         except Exception as e:
             print(f"加载实验室点云时出错: {e}")
 
+    def left_marvin_crawl(self):
+        """Marvin左臂抓取"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂抓取")
+
+        robot_name = "left_tianji"
+        if robot_name in self.robot_frames:
+            robot_frame = self.robot_frames[robot_name]
+            frame_name = robot_frame.name
+            print(f"找到机器人 {robot_name} 的frame: {frame_name}")
+            wxyz = (-0.2501005, 0.3123734, -0.6422197, -0.6537785)
+            position = (0.41251, 0.29041, 0.21029)
+
+            # 在base frame下创建新的frame A
+            frame_a_name = f"{frame_name}/left_marvin_crawl"
+            frame_a = self.ui.server.scene.add_frame(
+                name=frame_a_name,
+                show_axes=True,  # 显示坐标轴以便调试
+                position=position,
+                wxyz=wxyz,
+            )
+            print(f"创建新frame crawl: {frame_a_name}, 位置: {position}, 四元数: {wxyz}")
+
+            cam_cache_dir = Path(__file__).parent / "camera_cache" / "whatever"
+            cam_waican_path = cam_cache_dir / "handeye.npy"
+                
+            if cam_waican_path.exists():
+                transform_matrix = np.load(cam_waican_path)
+
+                print(f"读取变换矩阵: {transform_matrix}")
+                # 计算逆变换
+                qt7 = ampl.tf44_to_qt7(transform_matrix)
+                position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+                wxyz = (-0.6196, 0.3239, -0.5997, -0.3892)
+
+                qt7 = np.array([wxyz[1], wxyz[2], wxyz[3], wxyz[0], position[0], position[1], position[2]])
+                hand_eye_frame = ampl.qt7_to_tf44( qt7)
+
+            # 读取tianji_path.json中的路径点
+            tianji_path_file = cam_cache_dir / "tianji_path.json"
+            if tianji_path_file.exists():
+                with open(tianji_path_file, 'r') as f:
+                    path_data = json.load(f)
+                
+                # 提取路径点，只取前三个值（xyz）
+                path_points = []
+                if 'path' in path_data and isinstance(path_data['path'], list):
+                    for point in path_data['path']:
+                        if len(point) >= 3:
+                            xyz = [float(point[0] * 0.001), float(point[1] * 0.001), float(point[2] * 0.001)]
+                            qt7 = np.array([0, 0, 0, 1, xyz[0], xyz[1], xyz[2]])
+                            each_point = ampl.qt7_to_tf44( qt7)
+                            base_point = hand_eye_frame @ each_point
+                            path_points.append(base_point)
+                    print(f"读取到 {len(path_points)} 个路径点")
+                    
+                    if path_points and len(path_points) > 1:
+                        # 将路径点转换为numpy数组（每个点是4x4矩阵，提取位置）
+                        path_positions = []
+                        for point_matrix in path_points:
+                            # 从4x4矩阵中提取位置（第4列的前3个元素）
+                            pos = [point_matrix[0][3], point_matrix[1][3], point_matrix[2][3]]
+                            path_positions.append(pos)
+                        
+                        path_positions = np.array(path_positions)  # shape: (N, 3)
+                        
+                        # 1. 计算路径点的中点位置
+                        center_position = np.mean(path_positions, axis=0)
+                        print(f"路径点中点位置: {center_position}")
+                        
+                        # 2. 计算起点到终点的向量（作为 Y 轴）
+                        start_point = path_positions[0]
+                        end_point = path_positions[-1]
+                        y_axis_direction = start_point - end_point
+                        y_axis = y_axis_direction / np.linalg.norm(y_axis_direction)
+                        z_axis_world = np.array([0.0, 1.0, 0.0])
+                        x_axis = np.cross(y_axis, z_axis_world)
+                        x_axis = x_axis / np.linalg.norm(x_axis)
+                        z_axis = np.cross(x_axis, y_axis)
+
+                     
+                        T = np.eye(4)
+                        T[0:3, 0] = x_axis
+                        T[0:3, 1] = y_axis
+                        T[0:3, 2] = z_axis
+                        T[0:3, 3] = center_position
+                        self.marvin_crawl_pose = T  # 这里记录了抓取姿态
+
+                        qt7 = ampl.tf44_to_qt7(T)
+                        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+                        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+                        
+                        # 在frame A下创建新的坐标系frame
+                        path_frame_name = f"{frame_name}/path_coordinate_frame"
+                        path_frame = self.ui.server.scene.add_frame(
+                            name=path_frame_name,
+                            show_axes=True,
+                            position=position,
+                            wxyz=wxyz,
+                        )
+                        print(f"已在viser中创建路径坐标系frame: {path_frame_name}")            
+                        print(f"已显示 {len(path_positions)} 个路径点")
+                    else:
+                        print("警告: 路径点数量不足，无法计算坐标系")
+
+                        
+                else:
+                    print(f"警告: JSON文件中未找到有效的path数据")
+            else:
+                print(f"警告: 未找到tianji_path.json文件: {tianji_path_file}")
+
+    def left_marvin_moving(self, marvin_driver, marvin_kine, joint_data):
+        """Marvin左臂移动到抓取姿态"""
+        if self.marvin_crawl_pose is not None:
+            mcp = self.marvin_crawl_pose.copy()
+            mcp[ 0 ][ 3 ] *= 1000
+            mcp[1][3] *= 1000
+            mcp[2][3] *= 1000
+            mcp[1][3] -= 190
+
+            y_axis = mcp[0:3, 1]  # 局部的补偿
+            x_axis = mcp[0:3, 0] 
+            # 平移更新
+            mcp[0:3, 3] += -80 * y_axis
+            mcp[0:3, 3] += -30 * x_axis
+            print(f'mcp: {mcp}')
+            ik = marvin_kine.ik(robot_serial=0, pose_mat=mcp, ref_joints=joint_data)
+            ik_data = ik.m_Output_RetJoint.to_list()
+            print(f'joint_data: {ik_data}') 
+
+            # 设置位置更随模式
+            marvin_driver.clear_set()
+            marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+            marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+            marvin_driver.send_cmd()
+            time.sleep(0.5)
+            
+            marvin_driver.clear_set()
+            joint_cmd_1=ik_data
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(3) #预留运动时间
+
+            print(f"已为用户 {self.client.client_id} 已经移动到抓取姿态")
+        else:
+            print(f"警告: 未找到抓取姿态")
+
+    def left_marvin_go_before(self, marvin_driver, marvin_kine):
+        """Marvin左臂回到预夹取位置"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂回到预夹取位置")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[-29.51, -97.33, 39.64, -84.07, -24.30, -14.46, -75.12]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+        print(f"已为用户 {self.client.client_id} 已经回到预夹取位置")
+
+    def left_marvin_go_home(self, marvin_driver):
+        """Marvin左臂回到home"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂回到home")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -34.84, -81.16, 46.63, -108.75, -15.19, -14.10, -43.04 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+        print(f"已为用户 {self.client.client_id} 已经回到home")
+
+    def left_marvin_first_home(self, marvin_driver):
+        """Marvin左臂第一次装配home"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂第一次装配home")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ 5.83, -52.84, 50.57, -99.86, 4.02, -16.01, -1.49]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+        print(f"已为用户 {self.client.client_id} 已经回到第一次装配home")
+
+    def left_marvin_first_pre(self, marvin_driver):
+        """Marvin左臂第一次装配预夹取位置"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂第一次装配预夹取位置")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -63.82, -85.98, 98.81, -126.77, -125.56, 8.0, -15.70 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+        print(f"已为用户 {self.client.client_id} 已经回到第一次装配预夹取位置")
+
+    def left_marvin_first_jing(self, marvin_driver):
+        """Marvin左臂第一次装配进经状态"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂第一次装配进经状态")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -42.72, -68.01, 99.14, -102.81, -110.19, 9.18, -13.42 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+        print(f"已为用户 {self.client.client_id} 已经进经状态")
+
+    def left_marvin_first_cha(self, marvin_driver):
+        """Marvin左臂第一次装配插入"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂第一次装配插入")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -38.55, -44.72, 78.16, -100.90, -92.26, 34.57, -2.99]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+        print(f"已为用户 {self.client.client_id} 已经插入")
+
+    def left_marvin_first_out(self, marvin_driver):
+        """Marvin左臂第一次装配退出"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂第一次装配退出")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -44.64, -46.03, 82.50, -109.14, -96.30, 31.97, -4.75]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+        print(f"已为用户 {self.client.client_id} 已经退出")
+        
+
+    def left_marvin_grip(self, marvin_driver):
+        """Marvin左臂夹抓"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂夹抓")
+        result = marvin_driver.set_gripper_force('A', 100, channel=2)
+        result = marvin_driver.set_gripper_position('A', 0, channel=2)
+        print(f"已为用户 {self.client.client_id} 已经夹抓")
+
+    def left_marvin_release(self, marvin_driver):
+        """Marvin左臂释放"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂释放")
+        result = marvin_driver.set_gripper_force('A', 0, channel=2)
+        result = marvin_driver.set_gripper_position('A', 1000, channel=2)
+        print(f"已为用户 {self.client.client_id} 已经释放")
+
+    ## Marvin左臂第一次装配姿态生成， 一个是预期姿态，一个是家
+    def left_marvin_first_pose(self, marvin_driver):
+        robot_name = "left_tianji"
+        if robot_name in self.robot_frames:
+            robot_frame = self.robot_frames[robot_name]
+            frame_name = robot_frame.name
+            print(f"找到机器人 {robot_name} 的frame: {frame_name}")
+            wxyz = (0.0289958, 0.0502104, 0.5411871, 0.8389009)
+            position = (0.363, 0.11619, -0.094)
+
+            # 在base frame下创建新的frame A
+            frame_a_name = f"{frame_name}/left_marvin_first_put_pose_ref"
+            frame_a = self.ui.server.scene.add_frame(
+                name=frame_a_name,
+                show_axes=True,  # 显示坐标轴以便调试
+                position=position,
+                wxyz=wxyz,
+            )
+            print(f"创建新frame crawl: {frame_a_name}, 位置: {position}, 四元数: {wxyz}")
+
+            cam_cache_dir = Path(__file__).parent / "camera_cache" / "whatever"
+            cam_waican_path = cam_cache_dir / "handeye.npy"
+                
+            if cam_waican_path.exists():
+                transform_matrix = np.load(cam_waican_path)
+
+                print(f"读取变换矩阵: {transform_matrix}")
+                # 计算逆变换
+                qt7 = ampl.tf44_to_qt7(transform_matrix)
+                position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+                wxyz = (-0.6196, 0.3239, -0.5997, -0.3892)
+                qt7 = np.array([wxyz[1], wxyz[2], wxyz[3], wxyz[0], position[0], position[1], position[2]])
+                hand_eye_frame = ampl.qt7_to_tf44( qt7)
+
+            # 读取tianji_path.json中的路径点
+            tianji_path_file = cam_cache_dir / "tianji_first_put.json"
+            if tianji_path_file.exists():
+                with open(tianji_path_file, 'r') as f:
+                    path_data = json.load(f)
+                
+                # 提取路径点，只取前三个值（xyz）
+                path_points = []
+                if 'path' in path_data and isinstance(path_data['path'], list):
+                    for point in path_data['path']:
+                        if len(point) >= 3:
+                            xyz = [float(point[0] * 0.001), float(point[1] * 0.001), float(point[2] * 0.001)]
+                            qt7 = np.array([0, 0, 0, 1, xyz[0], xyz[1], xyz[2]])
+                            each_point = ampl.qt7_to_tf44( qt7)
+                            base_point = hand_eye_frame @ each_point
+                            path_points.append(base_point)
+                    print(f"读取到 {len(path_points)} 个路径点")
+                    
+                    if path_points and len(path_points) > 1:
+                        # 将路径点转换为numpy数组（每个点是4x4矩阵，提取位置）
+                        path_positions = []
+                        for point_matrix in path_points:
+                            # 从4x4矩阵中提取位置（第4列的前3个元素）
+                            pos = [point_matrix[0][3], point_matrix[1][3], point_matrix[2][3]]
+                            path_positions.append(pos)
+                        
+                        path_positions = np.array(path_positions)  # shape: (N, 3)
+                        
+                        # 在viser中显示路径点
+                        path_point_cloud_name = f"{frame_name}/first_pcd_points"
+                        # 为所有点生成红色 (RGB: 255, 0, 0)
+                        path_colors = np.ones((len(path_positions), 3), dtype=np.uint8) * np.array([0, 0, 0], dtype=np.uint8)
+                        self.ui.server.scene.add_point_cloud(
+                            name=path_point_cloud_name,
+                            points=path_positions,
+                            colors=path_colors,
+                            point_size=0.01,  # 点的大小
+                        )
+                        print(f"已在viser中显示 {len(path_positions)} 个路径点: {path_point_cloud_name}")
+                        
+                        # 1. 计算路径点的中点位置
+                        center_position = np.mean(path_positions, axis=0)
+                        print(f"路径点中点位置: {center_position}")
+                        
+                        # 2. 计算起点到终点的向量（作为 Y 轴）
+                        start_point = path_positions[0]
+                        end_point = path_positions[-1]
+                        print(f'start_point: {start_point}')
+                        print(f'end_point: {end_point}')
+
+                        y_axis_direction = end_point - start_point
+
+
+                        print(f'y_axis_direction: {y_axis_direction}')  
+                        y_axis = y_axis_direction / np.linalg.norm(y_axis_direction)
+                        print( f'y_axis: {y_axis}')
+                        z_axis_world = np.array([0.0, 1.0, 0.0])
+                        x_axis = np.cross(y_axis, z_axis_world)
+                        x_axis = x_axis / np.linalg.norm(x_axis)
+                        z_axis = np.cross(x_axis, y_axis)
+
+                        print(f'x_axis: {x_axis}')
+                        print(f'y_axis: {y_axis}')
+                        print(f'z_axis: {z_axis}')  
+
+
+                        T = np.eye(4)
+                        T[0:3, 0] = x_axis
+                        T[0:3, 1] = y_axis
+                        T[0:3, 2] = z_axis
+                        T[0:3, 3] = center_position
+                        self.marvin_first_put_pose = T  # 这里记录了装配姿态
+
+                        qt7 = ampl.tf44_to_qt7(T)
+                        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+                        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+                        
+                        # 在frame A下创建新的坐标系frame
+                        path_frame_name = f"{frame_name}/first_put_coordinate_frame"
+                        path_frame = self.ui.server.scene.add_frame(
+                            name=path_frame_name,
+                            show_axes=True,
+                            position=position,
+                            wxyz=wxyz,
+                        )
+                        print(f"已在viser中创建路径坐标系frame: {path_frame_name}")            
+                        print(f"已显示 {len(path_positions)} 个路径点")
+                    else:
+                        print("警告: 路径点数量不足，无法计算坐标系")
+
+                        
+                else:
+                    print(f"警告: JSON文件中未找到有效的path数据")
+            else:
+                print(f"警告: 未找到tianji_path.json文件: {tianji_path_file}")
+        
+    def left_marvin_first_put(self, marvin_driver, marvin_kine, joint_data):
+        """Marvin左臂第一次装配移动到装配位置"""
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂第一次装配移动到装配位置")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        if self.marvin_first_put_pose is not None:
+            mcp = self.marvin_first_put_pose.copy()
+            mcp[0][3] *= 1000
+            mcp[1][3] *= 1000
+            mcp[2][3] *= 1000
+            print(f'mcp: {mcp}')
+            # mcp[1][3] -= 190
+            
+            z_axis = mcp[0:3, 2]
+            # y_axis = mcp[0:3, 1]  # 局部的补偿
+            # x_axis = mcp[0:3, 0] 
+            # # 平移更新
+            mcp[0:3, 3] += z_axis * -100
+            print(f'mcp[0:3, 3]: {mcp[0:3, 3]}')
+            mcp[2][ 3 ] -= 45
+            mcp[1][ 3 ] += 100
+            mcp[0][ 3 ] += 8
+            # mcp[0:3, 3] += -30 * x_axis
+            print(f'mcp: {mcp}')
+            ik = marvin_kine.ik(robot_serial=0, pose_mat=mcp, ref_joints=joint_data)
+            ik_data = ik.m_Output_RetJoint.to_list()
+            print(f'joint_data: {ik_data}')  
+
+            marvin_driver.clear_set()
+            joint_cmd_1=ik_data
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(3) #预留运动时间
+
+            print(f"已为用户 {self.client.client_id} 已经移动到第一次装配位置")
+
+    def left_marvin_first_force(self, marvin_driver, marvin_kine, joint_data):
+        # 设置力控模式
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state=3)#state=3扭矩模式
+        marvin_driver.set_impedance_type(arm='A',type=3) #type = 1 关节阻抗;type = 2 坐标阻抗;type = 3 力控
+        marvin_driver.send_cmd()
+        time.sleep(0.1)
+
+        # 这里的逻辑是不断的向Y方向靠拢，然后向+Z方向不断的运动， 当位移不变换后就可以停止了
+        marvin_driver.clear_set()
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_data)
+        marvin_driver.send_cmd()
+        time.sleep(0.1)  # 这里的主要目的是让其能够有一个reference的位置
+
+        # 这里的逻辑是尽可能的先往Y方向进行运动，直到没有位移的变化
+        i = 1
+        transform = marvin_kine.fk( robot_serial=0, joints=joint_data)
+        face_touch = False
+        while not face_touch:
+            '''设置力控参数'''
+            marvin_driver.clear_set()
+            distance = 5
+
+            code = marvin_driver.set_force_control_params(arm='A',fcType=0, fxDirection=[0, 0, 1, 0, 0, 0], fcCtrlpara=[0, 0, 0, 0, 0, 0, 0],
+                                                    fcAdjLmt =distance )
+            marvin_driver.send_cmd()
+            time.sleep(0.1)
+
+            '''设置力控指令'''
+            marvin_driver.clear_set()
+            marvin_driver.set_force_cmd(arm='A',f=1)
+            marvin_driver.send_cmd()
+            time.sleep(0.1)
+
+            dcss=DCSS()
+            sub_data=marvin_driver.subscribe(dcss)
+            current_joints = self.get_marvin_joint_data( sub_data, 0 )
+            curent_transform = marvin_kine.fk( robot_serial=0, joints=current_joints)
+            distance = self.calculate(transform, curent_transform, mode='z')
+            print(f'distance: {distance}')
+            transform = curent_transform
+            # break
+
+            ik = marvin_kine.ik(robot_serial=0, pose_mat=transform, ref_joints=joint_data)
+            # print(f'ik: {ik.m_Output_RetJoint.to_list()}')
+            joint_data = ik.m_Output_RetJoint.to_list()
+            marvin_driver.clear_set()
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_data)
+            marvin_driver.send_cmd()
+            time.sleep(0.2)
+            i += 1
+            if i > 20:
+                break
+
+            if i > 3 and distance < 3:
+                face_touch = True
+                print("face touch")
+                break
+
+            if sub_data['states'][0]['err_code'] == 6:
+                face_touch = False
+                print("wu zu kang")
+                break
+        print("Y face already touch")
+
+
+        # 然后是正Z方向的运动
+        i = 1
+        transform = marvin_kine.fk( robot_serial=0, joints=joint_data)
+        face_touch = False
+        while not face_touch:
+            '''设置力控参数'''
+            marvin_driver.clear_set()
+            distance = 5.0
+
+            code = marvin_driver.set_force_control_params(arm='A',fcType=0, fxDirection=[0, 1, 0, 0, 0, 0], fcCtrlpara=[0, 0, 0, 0, 0, 0, 0],
+                                                    fcAdjLmt =distance )
+            marvin_driver.send_cmd()
+            time.sleep(0.1)
+
+            '''设置力控指令'''
+            marvin_driver.clear_set()
+            marvin_driver.set_force_cmd(arm='A',f=5)
+            marvin_driver.send_cmd()
+            time.sleep(0.2)
+
+
+            code = marvin_driver.set_force_control_params(arm='A',fcType=0, fxDirection=[0, 0, 1, 0, 0, 0], fcCtrlpara=[0, 0, 0, 0, 0, 0, 0],
+                                                    fcAdjLmt =1 )
+            marvin_driver.send_cmd()
+            time.sleep(0.1)
+
+            '''设置力控指令'''
+            marvin_driver.clear_set()
+            marvin_driver.set_force_cmd(arm='A',f=1)
+            marvin_driver.send_cmd()
+            time.sleep(0.1)
+
+
+            dcss=DCSS()
+            sub_data=marvin_driver.subscribe(dcss)
+            current_joints = self.get_marvin_joint_data( sub_data, 0 )
+            curent_transform = marvin_kine.fk( robot_serial=0, joints=current_joints)
+            distance = self.calculate(transform, curent_transform, mode='y')
+            print(f'distance: {distance}')
+            transform = curent_transform
+            # break
+
+            ik = marvin_kine.ik(robot_serial=0, pose_mat=transform, ref_joints=joint_data)
+            # print(f'ik: {ik.m_Output_RetJoint.to_list()}')
+            joint_data = ik.m_Output_RetJoint.to_list()
+            marvin_driver.clear_set()
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_data)
+            marvin_driver.send_cmd()
+            time.sleep(0.2)
+            i += 1
+
+            if i > 4:
+                break
+
+            if i > 2 and distance < 2:
+                face_touch = True
+                print("face touch")
+                break
+
+            if sub_data['states'][0]['err_code'] == 6:
+                face_touch = False
+                print("wu zu kang")
+                break
+
+
+        print("Z face already touch")
+
+
+
     def update_robot_visualization(self, entity_name: str, joint_config: np.ndarray, update_sliders: bool = True, update_end_effector_state: bool = True):
         """统一的可视化更新回调函数，兼容所有情况（机器人和移动小车）
         
@@ -1257,3 +1844,54 @@ class UserSession:
         if update_end_effector_state and entity_type == "robot" and entity_name in self.end_effector_controls:
             robot_info = self.end_effector_controls[entity_name]
             robot_info["current_joint_config"] = joint_config.copy()
+
+
+    def get_marvin_joint_data(self, sub_data, arm_index):
+        if arm_index < len(sub_data["outputs"]):
+            output = sub_data["outputs"][arm_index]
+            data_map = {
+                "pos": output.get("fb_joint_pos", [0.0] * 7),
+                "vel": output.get("fb_joint_vel", [0.0] * 7),
+                "sToq": output.get("fb_joint_sToq", [0.0] * 7),
+                "cToq": output.get("fb_joint_cToq", [0.0] * 7),
+                "them": output.get("fb_joint_them", [0.0] * 7),
+            }
+            return data_map.get("pos", [0.0] * 7)
+        else:
+            return [0.0] * 7
+
+
+    def calculate(self, t1, t2, mode = 'norm' ):
+        """计算两个变换之间的欧几里得距离
+        
+        Args:
+            t1, t2: 可以是4x4矩阵或6D pose格式
+        
+        Returns:
+            欧几里得距离（毫米）
+        """
+        print(f't1: {t1}')
+        print(f't2: {t2}')
+        pos1 = [ t1[0][3], t1[1][3], t1[2][3] ]
+        pos2 = [ t2[0][3], t2[1][3], t2[2][3] ]
+        
+        x1, y1, z1 = pos1
+        x2, y2, z2 = pos2
+        
+        # 计算差向量
+        dx = x2 - x1
+        dy = y2 - y1
+        dz = z2 - z1
+        
+        if mode == 'norm':
+            # 计算欧几里得范数（norm）
+            norm = np.sqrt(dx*dx + dy*dy + dz*dz)
+            return norm
+        elif mode == 'x':
+            return abs(x2 - x1)
+        elif mode == 'y':
+            return abs(y2 - y1)
+        elif mode == 'z':
+            return abs(z2 - z1)
+        
+        return norm

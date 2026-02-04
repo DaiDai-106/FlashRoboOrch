@@ -53,12 +53,22 @@ class ViserUI:
             with self.server.gui.add_folder("工件装配任务"):
                 with self.server.gui.add_folder("Marvin左臂抓取工件", expand_by_default = False):
                     self.left_marvin_capture = self.server.gui.add_button("Marvin相机识别", icon=viser.Icon.CAMERA)
-                # self.marvin_go_home = self.server.gui.add_button("回到加工台", icon=viser.Icon.HAND_MOVE)
-                # self.marvin_capture = self.server.gui.add_button("定位加持工件", icon=viser.Icon.CAPTURE)
-                # self.marvin_show_capture_pcl = self.server.gui.add_checkbox("显示定位点云", initial_value=False)
-                # self.marvin_capture_pose = self.server.gui.add_button("生成抓取姿态", icon=viser.Icon.CAPTURE)
-                # self.marvin_show_capture_pose = self.server.gui.add_checkbox("显示抓取姿态", initial_value=False)
-
+                    self.left_marvin_crawl = self.server.gui.add_button("生成抓取姿态", icon=viser.Icon.CAPTURE)
+                    self.left_marvin_moving = self.server.gui.add_button("移动到抓取姿态", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_go_before = self.server.gui.add_button("回到预夹取位置", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_go_home = self.server.gui.add_button("回到home", icon=viser.Icon.HAND_MOVE)
+                with self.server.gui.add_folder("天机第一次装配任务", expand_by_default = True):
+                    self.left_marvin_first_home = self.server.gui.add_button("运动到装配home位置", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_first_pre = self.server.gui.add_button("运动到装配预夹取位置", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_first_pose = self.server.gui.add_button("生成装配姿态", icon=viser.Icon.CAPTURE)
+                    self.left_marvin_first_put = self.server.gui.add_button("移动到装配位置", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_first_jing = self.server.gui.add_button("进经状态", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_first_cha = self.server.gui.add_button("插入", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_first_out = self.server.gui.add_button("退出", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_first_force = self.server.gui.add_button("开始力控", icon=viser.Icon.HAND_MOVE)
+                with self.server.gui.add_folder("Marvin左臂夹抓控制", expand_by_default = True):
+                    self.left_marvin_grip = self.server.gui.add_button("夹抓", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_release = self.server.gui.add_button("释放", icon=viser.Icon.HAND_MOVE)
             
             with self.server.gui.add_folder("焊接打磨任务"):
                 with self.server.gui.add_folder("Fanuc右臂焊接任务", expand_by_default = True):
