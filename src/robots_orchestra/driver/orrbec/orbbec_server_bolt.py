@@ -67,7 +67,8 @@ def get_transform_matrix(ob_transform):
 
 
 class OrbbecGrabber(CameraServer):
-    def __init__(self):
+    def __init__(self, serial_number: str):
+        self.serial_number = serial_number
         self.camera_param = None
         self.server = DummyServer()
         self.server.register_service("OrbbecGrabber", "A service to grab orrbec images using pyorbbecsdk.", "1.0.0", {
@@ -161,7 +162,8 @@ class OrbbecGrabber(CameraServer):
                 logging.error("Device is already connected")
                 return
             logging.info("Try to get device")
-            self.device = device_list.get_device_by_index(0)
+            self.device = device_list.get_device_by_serial_number(self.serial_number)
+            print(self.device.get_device_info()) 
             self.start_streaming()
 
     def on_device_disconnected_callback(self, device_list: DeviceList):
@@ -232,25 +234,3 @@ class OrbbecGrabber(CameraServer):
 
         self.on_new_frame_callback(color_frame)
         self.on_new_frame_callback(depth_frame)
-        # try:
-        #     color_data = cv2.cvtColor( self.latest_color_frame, cv2.COLOR_BGR2RGB)
-        #     cv2.imwrite(save_path+'current_color.png', color_data)
-        #     depth_data = self.latest_depth_frame.astype(np.float32) 
-        #     np.save(save_path+'current_depth.npy', depth_data)
-        # except:
-        #     pass
-
-
-        # self.d2c_extrinsic = get_transform_matrix(self.depth_profile.get_extrinsic_to(self.color_profile))
-        # camera_param = self.pipeline.get_camera_param()
-        # self.camera_param = ob_camera_param_to_dict(camera_param)
-        # # self.camera_param = [{'d2c_extrinsic': self.d2c_extrinsic,}] + self.camera_param
-        # np.savetxt(save_path+'d2c_extrinsic.txt', self.d2c_extrinsic)
-
-
-# grabber = OrbbecGrabber()
-
-# app = grabber.run()
-
-# if __name__ == "__main__":
-#     uvicorn.run(app, host="0.0.0.0", port=8005)

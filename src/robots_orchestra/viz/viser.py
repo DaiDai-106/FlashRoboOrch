@@ -11,7 +11,7 @@ class ViserUI:
 
          # 这里对各个子任务进行系统性的梳理
         self.initialize_process()
-        self.load_rolab()
+        # self.load_rolab()  # 暂时先不加载了
 
     def initialize_ui(self):
         # 添加默认网格 (grid) - XY 平面，适合机器人场景
@@ -45,50 +45,42 @@ class ViserUI:
     """长任务执行单元, 目前只是测试， 后续应该会尽可能的罗列出所有子任务"""
     def initialize_process(self):
         with self.server.gui.add_folder("长任务执行单元"):
-            with self.server.gui.add_folder("框架移动任务", expand_by_default = False):
-                self.abb_offline_planning = self.server.gui.add_button("ABB 框架移动规划", icon=viser.Icon.MOUSE)
-                self.abb_view_simulation = self.server.gui.add_folder("查看仿真")  
-                self.abb_execute = self.server.gui.add_button("任务执行", icon=viser.Icon.HAND_MOVE)
+            with self.server.gui.add_folder("天机装配任务", expand_by_default = False):
+                with self.server.gui.add_folder("右臂感知任务"):
+                    self.right_marvin_home = self.server.gui.add_button("移动到拍照的home状态", icon=viser.Icon.HAND_MOVE)
+                    self.right_marvin_first_capture = self.server.gui.add_button("移动到右手的第一个拍照状态", icon=viser.Icon.CAMERA)
+                    self.right_marvin_first_icp = self.server.gui.add_button("第一个模型的icp配准", icon=viser.Icon.CAPTURE)
+                    self.right_marvin_second_capture = self.server.gui.add_button("移动到右手的第二个拍照状态", icon=viser.Icon.CAMERA)
+                    self.right_marvin_second_icp = self.server.gui.add_button("第二个模型的icp配准", icon=viser.Icon.CAPTURE)
+                with self.server.gui.add_folder("左臂抓取任务"):
+                    self.left_marvin_home = self.server.gui.add_button("移动到左手的home状态", icon=viser.Icon.HAND_MOVE)
+                    self.left_marvin_pre_zhua_move = self.server.gui.add_button("移动到左手的预抓取位置", icon=viser.Icon.HAND_MOVE)  
+                    with self.server.gui.add_folder("左臂预抓取到预装配movel"):
+                        self.left_marvin_pre_zhua_put_movel = self.server.gui.add_button("求解moveL", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_pre_zhua_put_movel_view_simulation = self.server.gui.add_folder("查看仿真")  # 这是个Movel
+                        self.left_marvin_pre_zhua_to_put = self.server.gui.add_button("实际执行移动到左手的预装配位置", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_pre_zhua_to_put_reverse = self.server.gui.add_button("回退到预抓取位置", icon=viser.Icon.HAND_MOVE)
 
-            with self.server.gui.add_folder("工件装配任务"):
-                with self.server.gui.add_folder("Marvin左臂抓取工件", expand_by_default = False):
-                    self.left_marvin_capture = self.server.gui.add_button("Marvin相机识别", icon=viser.Icon.CAMERA)
-                    self.left_marvin_crawl = self.server.gui.add_button("生成抓取姿态", icon=viser.Icon.CAPTURE)
-                    self.left_marvin_moving = self.server.gui.add_button("移动到抓取姿态", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_go_before = self.server.gui.add_button("回到预夹取位置", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_go_home = self.server.gui.add_button("回到home", icon=viser.Icon.HAND_MOVE)
-                with self.server.gui.add_folder("天机第一次装配任务", expand_by_default = True):
-                    self.left_marvin_first_home = self.server.gui.add_button("运动到装配home位置", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_first_pre = self.server.gui.add_button("运动到装配预夹取位置", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_first_pose = self.server.gui.add_button("生成装配姿态", icon=viser.Icon.CAPTURE)
-                    self.left_marvin_first_put = self.server.gui.add_button("移动到装配位置", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_first_jing = self.server.gui.add_button("进经状态", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_first_cha = self.server.gui.add_button("插入", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_first_out = self.server.gui.add_button("退出", icon=viser.Icon.HAND_MOVE)
-                    self.left_marvin_first_force = self.server.gui.add_button("开始力控", icon=viser.Icon.HAND_MOVE)
-                with self.server.gui.add_folder("Marvin左臂夹抓控制", expand_by_default = True):
+                    with self.server.gui.add_folder("左臂抓取进近"):
+                        self.left_marvin_zhua_pose =  self.server.gui.add_button("生成抓的姿态", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_zhua_l =  self.server.gui.add_button("求解移动到抓取movel", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_zhua_view_simulation = self.server.gui.add_folder("查看仿真")
+                        self.left_marvin_zhua_in =  self.server.gui.add_button("实机执行进入抓取", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_zhua_out =  self.server.gui.add_button("实机执行回预抓取", icon=viser.Icon.HAND_MOVE)
+
+                    with self.server.gui.add_folder("左臂放置进近"):
+                        self.left_marvin_put_pose =  self.server.gui.add_button("生成放的姿态", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_put_l =  self.server.gui.add_button("求解移动到放置的movel", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_put_view_simulation = self.server.gui.add_folder("查看仿真")
+                        self.left_marvin_put_in =  self.server.gui.add_button("实机执行进入放置", icon=viser.Icon.HAND_MOVE)
+                        self.left_marvin_put_out =  self.server.gui.add_button("实机执行回预放置", icon=viser.Icon.HAND_MOVE)
+
+
+             
+                    
+            with self.server.gui.add_folder("Marvin左臂夹抓控制", expand_by_default = True):
                     self.left_marvin_grip = self.server.gui.add_button("夹抓", icon=viser.Icon.HAND_MOVE)
                     self.left_marvin_release = self.server.gui.add_button("释放", icon=viser.Icon.HAND_MOVE)
-            
-            with self.server.gui.add_folder("焊接打磨任务"):
-                with self.server.gui.add_folder("Fanuc右臂焊接任务", expand_by_default = True):
-                    with self.server.gui.add_folder("焊接小车移动任务", expand_by_default = False):
-                        self.fanuc_car_move = self.server.gui.add_button("焊接小车规划", icon=viser.Icon.MOUSE)
-                        self.fanuc_car_view_simulation = self.server.gui.add_folder("查看仿真")
-                        self.fanuc_car_execute = self.server.gui.add_button("任务执行", icon=viser.Icon.HAND_MOVE)
-
-                    with self.server.gui.add_folder("焊接定位任务", expand_by_default = False):
-                        self.franka_locate = self.server.gui.add_button("焊接定位规划", icon=viser.Icon.MOUSE)
-                        self.franka_view_simulation = self.server.gui.add_folder("查看仿真")
-                        self.franka_capture = self.server.gui.add_button("执行拍照", icon=viser.Icon.CAMERA)
-                        self.franka_capture_pcl = self.server.gui.add_folder("查看点云")
-
-
-                    with self.server.gui.add_folder("焊接姿态生成", expand_by_default = False):
-                        pass
-
-                with self.server.gui.add_folder("Fanuc左臂打磨任务", expand_by_default = False):
-                    pass
 
     def load_rolab(self):
         """加载并显示完整的实验室点云模型"""

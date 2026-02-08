@@ -24,10 +24,9 @@ def main():
     # device_1 = device_list.get_device_by_serial_number("CL838420167")
     # print(device_1.get_device_info())
 
-    
-    orbbec_server_0 = OrbbecGrabber(serial_number="CP828410007K")
-    app_0 = orbbec_server_0.run()
-    uvicorn.run(app_0, host="0.0.0.0", port=8005)
+    orbbec_server_1 = OrbbecGrabber(serial_number="CL838420167")
+    app_1 = orbbec_server_1.run()
+    uvicorn.run(app_1, host="0.0.0.0", port=8006)
 
 if __name__ == "__main__":
     main()
