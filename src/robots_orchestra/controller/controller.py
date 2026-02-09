@@ -35,60 +35,77 @@ class Controller:
         @self.ui.right_marvin_first_capture.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
             self.handle_right_marvin_first_capture(event)
-        
-        @self.ui.right_marvin_first_icp.on_click
-        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_right_marvin_first_icp(event)
-        
+    
         @self.ui.right_marvin_second_capture.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
             self.handle_right_marvin_second_capture(event)
-        
-        @self.ui.right_marvin_second_icp.on_click
-        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_right_marvin_second_icp(event)
 
         @self.ui.left_marvin_home.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
             self.handle_left_marvin_home(event)
 
-        @self.ui.left_marvin_pre_zhua_put_movel.on_click
+        # 分界线，上面是天机装配任务------------------------------------------
+        @self.ui.a_pre_zhua_state.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_pre_zhua_put_movel(event)
-
-        # 桌面组配左臂抓取任务
-        @self.ui.left_marvin_zhua_pose.on_click
+            self.handle_a_pre_zhua_state(event)
+        @self.ui.a_pre_put_state.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_zhua_pose(event)
-
-        # 求解到抓取的movel
-        @self.ui.left_marvin_zhua_l.on_click
+            self.handle_a_pre_put_state(event)
+        @self.ui.b_pre_zhua_state.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_zhua_l(event)
-
-
-        @self.ui.left_marvin_pre_zhua_move.on_click
+            self.handle_b_pre_zhua_state(event)
+        @self.ui.b_pre_put_state.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_pre_zhua_move(event)
+            self.handle_b_pre_put_state(event)
+        @self.ui.a_zhua_sim.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_a_zhua_sim(event)
+        @self.ui.a_put_sim.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_a_put_sim(event)
+        @self.ui.a_zhua_real_do.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_a_zhua_real_do(event)
+        @self.ui.a_put_real_do.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_a_put_real_do(event)
+        @self.ui.a_zhua_real_do_reverse.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_a_zhua_real_do_reverse(event)
+        @self.ui.a_put_real_do_reverse.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_a_put_real_do_reverse(event)
+        @self.ui.a_whole_process.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_a_whole_process(event)
+        @self.ui.b_zhua_sim.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_zhua_sim(event)
+        @self.ui.b_put_sim.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_put_sim(event)
+        @self.ui.b_zhua_real_do.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_zhua_real_do(event)
+        @self.ui.b_put_real_do.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_put_real_do(event)
+        @self.ui.b_zhua_real_do_reverse.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_zhua_real_do_reverse(event)
+        @self.ui.b_put_real_do_reverse.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_put_real_do_reverse(event)
+        @self.ui.b_put_insert.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_put_insert(event)
+        @self.ui.b_put_insert_reverse.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_put_insert_reverse(event)
+        @self.ui.b_whole_process.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_b_whole_process(event)
         
-        @self.ui.left_marvin_pre_zhua_to_put.on_click
-        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_pre_zhua_to_put(event)
-
-        @self.ui.left_marvin_pre_zhua_to_put_reverse.on_click
-        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_pre_zhua_to_put_reverse(event)
-
-        # 左臂进近状态
-        @self.ui.left_marvin_zhua_in.on_click
-        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_zhua_in(event)
-
-        # 左臂退出状态
-        @self.ui.left_marvin_zhua_out.on_click
-        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_zhua_out(event)
-
         #-------------------------------------------------------------------------------------------------
 
         # Marvin左臂夹抓任务
@@ -99,25 +116,82 @@ class Controller:
         # Marvin左臂释放任务
         @self.ui.left_marvin_release.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_release(event)
+            self.handle_left_marvin_release(event)  
 
-
-        @self.ui.left_marvin_put_pose.on_click
+        # 天机力控插入任务 ------------------------------------------
+        @self.ui.first_insert_capture.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_put_pose(event)
+            self.handle_first_insert_capture(event)
 
-        @self.ui.left_marvin_put_l.on_click
+        @self.ui.first_insert_icp.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_put_l(event)
+            self.handle_first_insert_icp(event)
 
-        @self.ui.left_marvin_put_in.on_click
+        @self.ui.first_insert_get_object.on_click
         def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_put_in(event)
-            
-        @self.ui.left_marvin_put_out.on_click
-        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
-            self.handle_left_marvin_put_out(event)  
+            self.handle_first_insert_get_object(event)
 
+        @self.ui.first_insert_back_object.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_first_insert_back_object(event)
+
+        @self.ui.first_insert_sim.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_first_insert_sim(event)
+
+        @self.ui.first_insert_real_do.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_first_insert_real_do(event)
+
+        @self.ui.first_insert_real_do_inset.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_first_insert_real_do_inset(event)
+
+        @self.ui.first_insert_real_do_inset_reverse.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_first_insert_real_do_inset_reverse(event)
+
+
+        # 天机的第二次插入的任务-------------------------------------------------------------------
+        @self.ui.second_insert_capture.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_capture(event)
+
+        @self.ui.second_insert_icp.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_icp(event)
+
+        @self.ui.second_insert_get_object.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_get_object(event)
+
+        @self.ui.second_insert_back_object.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_back_object(event)
+
+        @self.ui.second_insert_sim.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_sim(event)
+
+        @self.ui.second_insert_real_do.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_real_do(event)
+
+        @self.ui.second_insert_real_do_inset.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_real_do_inset(event)
+
+        @self.ui.second_insert_real_do_inset_reverse.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_second_insert_real_do_inset_reverse(event)
+
+        # Marvin基础功能
+        @self.ui.marvin_stop.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_marvin_stop(event)
+        @self.ui.marvin_clear_error.on_click
+        def _(event: viser.GuiEvent[viser.GuiButtonHandle]):
+            self.handle_marvin_clear_error(event)
 
     #----- Marvin 相关任务处理 ----------------------------------------------------------
     def initialize_marvin(self):
@@ -300,16 +374,6 @@ class Controller:
         session = self.sessions[client]
         session.right_marvin_first_capture( self.marvin_driver )
 
-    def handle_right_marvin_first_icp(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理天机第一个icp配准按钮事件"""
-        client = event.client
-        if client is None or client not in self.sessions:
-            print(f"警告: 无法找到触发事件的客户端")
-            return
-        
-        session = self.sessions[client]
-        session.right_marvin_first_icp( self.marvin_driver, self.marvin_kine_2 )
-
     def handle_right_marvin_second_capture(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
         """处理天机第二个拍照按钮事件"""
         client = event.client
@@ -319,16 +383,6 @@ class Controller:
         
         session = self.sessions[client]
         session.right_marvin_second_capture( self.marvin_driver )
-
-    def handle_right_marvin_second_icp(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理天机第二个icp配准按钮事件"""
-        client = event.client
-        if client is None or client not in self.sessions:
-            print(f"警告: 无法找到触发事件的客户端")
-            return
-        
-        session = self.sessions[client]
-        session.right_marvin_second_icp( self.marvin_driver, self.marvin_kine_2 )
 
     def handle_left_marvin_home(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
         """处理Marvin左臂回到home按钮事件"""
@@ -341,128 +395,353 @@ class Controller:
         session.left_marvin_home( self.marvin_driver )
 
     
-
-    def handle_left_marvin_pre_zhua_move(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂预抓取到预装配movel按钮事件"""
+    def handle_a_pre_zhua_state(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A预抓状态按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_pre_zhua_move( self.marvin_driver )
-        
-    def handle_left_marvin_pre_zhua_put_movel(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂预抓取到预装配movel按钮事件"""
+        session.a_pre_zhua_state( self.marvin_driver )
+
+    def handle_a_pre_put_state(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A预放状态按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_pre_zhua_put_movel( self.marvin_driver, self.marvin_kine )
+        session.a_pre_put_state( self.marvin_driver )
 
-    def handle_left_marvin_pre_zhua_to_put(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """实际下发执行从预抓取到预装配的movel"""
+    def handle_b_pre_zhua_state(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B预抓状态按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_pre_zhua_to_put( self.marvin_driver )
+        session.b_pre_zhua_state( self.marvin_driver )
 
-    def handle_left_marvin_pre_zhua_to_put_reverse(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂回退到预抓取位置按钮事件"""
+    def handle_b_pre_put_state(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B预放状态按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_pre_zhua_to_put_reverse( self.marvin_driver )
-
-    def handle_left_marvin_zhua_pose(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂抓取姿态生成按钮事件"""
+        session.b_pre_put_state( self.marvin_driver )
+    
+    def handle_a_zhua_sim(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A抓取作用补偿后仿真按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_zhua_pose( self.marvin_driver, self.marvin_kine )
+        session.a_zhua_sim( self.marvin_driver )
 
-    def handle_left_marvin_zhua_l(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂抓取movel按钮事件"""
+    def handle_a_put_sim(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A放置作用补偿后仿真按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_zhua_l( self.marvin_driver, self.marvin_kine )
+        session.a_put_sim( self.marvin_driver )
 
-    def handle_left_marvin_zhua_in(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂抓取进近按钮事件"""
+    def handle_a_zhua_real_do(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A抓取实际执行按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+
+        session = self.sessions[client]
+        session.a_zhua_real_do( self.marvin_driver )
+
+    def handle_a_put_real_do(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A放置实际执行按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+
+        session = self.sessions[client]
+        session.a_put_real_do( self.marvin_driver )
+
+    def handle_a_zhua_real_do_reverse(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A抓取实际执行回退按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.a_zhua_real_do_reverse( self.marvin_driver )
+
+    def handle_a_put_real_do_reverse(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A放置实际执行回退按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.a_put_real_do_reverse( self.marvin_driver )
+
+    def handle_a_whole_process(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理A实际执行完整过程按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.a_whole_process( self.marvin_driver )
+
+    def handle_b_zhua_sim(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B抓取作用补偿后仿真按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.b_zhua_sim( self.marvin_driver )
+
+    def handle_b_put_sim(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B放置作用补偿后仿真按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.b_put_sim( self.marvin_driver )
+
+    def handle_b_put_real_do(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B放置实际执行按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.b_put_real_do( self.marvin_driver )     
+
+    def handle_b_put_real_do_reverse(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B放置实际执行回退按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.b_put_real_do_reverse( self.marvin_driver )
+        
+    def handle_b_put_insert(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B放置插入按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.b_put_insert( self.marvin_driver )
+
+    def handle_b_put_insert_reverse(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B放置插入回退按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.b_put_insert_reverse( self.marvin_driver )
+
+    def handle_b_whole_process(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理B实际执行完整过程按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.b_whole_process( self.marvin_driver )   
+    #-----------------------------------------------纯分割线-----------------------------------------------
+
+
+    # 分界线，下面是天机力控插入任务------------------------------------------
+    def handle_first_insert_capture(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入拍照按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        
+        session = self.sessions[client] 
+        session.first_insert_capture( self.marvin_driver )
+
+    def handle_first_insert_icp(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入icp配准按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_zhua_in( self.marvin_driver )
+        session.first_insert_icp( self.marvin_driver, self.marvin_kine_2 ) 
 
-    def handle_left_marvin_zhua_out(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂抓取退出按钮事件"""
+    def handle_first_insert_get_object(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入获取物体按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
+        session.first_insert_get_object( self.marvin_driver )
 
-        session.left_marvin_zhua_out( self.marvin_driver )
+    def handle_first_insert_back_object(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入回退物体按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.first_insert_back_object( self.marvin_driver )
 
-
-    def handle_left_marvin_put_pose(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂放置姿态生成按钮事件"""
+    def handle_first_insert_sim(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入仿真按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_put_pose( self.marvin_driver, self.marvin_kine )
+        session.first_insert_sim( self.marvin_driver, self.marvin_driver )
 
-    def handle_left_marvin_put_l(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂放置movel按钮事件"""
+    def handle_first_insert_real_do(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入实际执行按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
         
         session = self.sessions[client]
-        session.left_marvin_put_l( self.marvin_driver, self.marvin_kine )
+        session.first_insert_real_do( self.marvin_driver )
 
-    def handle_left_marvin_put_in(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂放置进近按钮事件"""
+    def handle_first_insert_real_do_inset(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入实际执行插入按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
-        
+        dcss = DCSS()
+        sub_data = self.marvin_driver.subscribe(dcss)
+        joint =self.get_marvin_joint_data( sub_data, 0)
         session = self.sessions[client]
-        session.left_marvin_put_in( self.marvin_driver )
+        session.first_insert_real_do_inset( self.marvin_driver, joint )
 
-    def handle_left_marvin_put_out(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
-        """处理Marvin左臂放置退出按钮事件"""
+    def handle_first_insert_real_do_inset_reverse(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第一次力控插入实际执行插入回退按钮事件"""
         client = event.client
         if client is None or client not in self.sessions:
             print(f"警告: 无法找到触发事件的客户端")
             return
-        
         session = self.sessions[client]
-        session.left_marvin_put_out( self.marvin_driver )
+        session.first_insert_real_do_inset_reverse( self.marvin_driver )
+
+
+    # 天机的第二次插入的任务-------------------------------------------------------------------
+
+    def handle_second_insert_capture(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入拍照按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.second_inseet_capture( self.marvin_driver )
+
+    def handle_second_insert_icp(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入icp配准按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.second_insert_icp( self.marvin_driver, self.marvin_kine_2 )
+
+    def handle_second_insert_get_object(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入获取物体按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.second_insert_get_object( self.marvin_driver )
+
+
+    def handle_second_insert_back_object(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入回退物体按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.second_insert_back_object( self.marvin_driver )
+
+    def handle_second_insert_sim(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入仿真按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.second_insert_sim( self.marvin_driver, self.marvin_driver )
+
+    def handle_second_insert_real_do(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入实际执行按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.second_insert_real_do( self.marvin_driver )
+
+    def handle_second_insert_real_do_inset(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入实际执行插入按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:   
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        
+        dcss = DCSS()
+        sub_data = self.marvin_driver.subscribe(dcss)
+        joint =self.get_marvin_joint_data( sub_data, 0)
+        session = self.sessions[client]
+        session.second_insert_real_do_inset( self.marvin_driver, joint )
+
+    def handle_second_insert_real_do_inset_reverse(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理天机第二次力控插入实际执行插入回退按钮事件"""
+        client = event.client
+        if client is None or client not in self.sessions:
+            print(f"警告: 无法找到触发事件的客户端")
+            return
+        session = self.sessions[client]
+        session.second_insert_real_do_inset_reverse( self.marvin_driver )
+
+    # Marvin基础功能
+    def handle_marvin_stop(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理Marvin急停按钮事件"""
+        self.marvin_driver.soft_stop("AB")
+        time.sleep(0.5)
+
+    def handle_marvin_clear_error(self, event: viser.GuiEvent[viser.GuiButtonHandle]):
+        """处理Marvin清错按钮事件"""
+        time.sleep(0.5)
+        self.marvin_driver.clear_set()
+        self.marvin_driver.clear_error('A')
+        self.marvin_driver.clear_error('B')
+        self.marvin_driver.send_cmd()
+        time.sleep(0.5)
 
     def run(self):
         """运行控制器"""

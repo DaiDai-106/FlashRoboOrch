@@ -56,12 +56,23 @@ class UserSession:
         self.marvin_first_put_pose = None
         # TODO 每一个用户加载时, 还是可以和服务进行共用的
 
-        # ------------------------ 1. 第一个的装配任务 -------------------------------------------------------
-        self.first_assem_zhua_pose = None  # 这都是通过icp匹配后的结果
-        self.first_assem_put_pose = None
-        self.pre_zhua_to_pre_put_movel_path = None
-        self.zhua_in_path = None
-        self.put_in_path = None
+        # 第一个装配任务, 装配任务永远就是维护这些个路径， 然后将这些路径进行配合
+        self.a_zhua_path = None # a抓取路径
+        self.a_put_path = None # a放置路径
+        self.b_zhua_path = None # b抓取路径
+        self.b_put_path = None # b放置路径
+        self.b_insert_path = None # b插入路径
+
+        # ------------------------ 1. 第一个插入任务 -------------------------------------------------------
+        self.first_insert_pose = None    
+        self.first_insert_path = None
+        self.first_cha_path = None
+
+        # ------------------------ 2. 第二个插入任务 -------------------------------------------------------
+        self.second_insert_pose = None  # 这其实就是工件坐标系了，后续的补偿完全可以补偿这个工件坐标系
+        self.second_insert_path = None
+        self.second_cha_path = None
+        self.second_cha_path_2 = None
 
         self.create_scene_buttons() # 为每个用户创建独立的场景加载按钮
     
@@ -872,7 +883,7 @@ class UserSession:
         mesh_url: str,
         task_id: str = "marvin",
         skip_points: int = 2,
-        max_dist_point_to_plane: float = 0.1,
+        max_dist_point_to_plane: float = 0.05,
         scale: float = 0.001,
         subtask: str = "",
         api_url: str = "http://192.168.1.206:8001/icp_pc_to_mesh",
@@ -1021,7 +1032,42 @@ class UserSession:
         T_out[:3, :3] = R_aligned
         return T_out
 
-    
+    def wait_for_low_speed_flag(self, marvin_driver):
+        """
+        等待低速标志，当 low_speed_flag == b'\\x01' 时返回
+        
+        Args:
+            marvin_driver: Marvin 机器人驱动对象
+        """
+        while True:
+            dcss = DCSS()
+            sub_data = marvin_driver.subscribe(dcss)
+
+            output = sub_data["outputs"][0]
+            low_speed_flag = output.get("low_speed_flag", False)
+            # print("low_speed_flag", low_speed_flag)
+            
+            # 如果 low_speed_flag == b'\x01'，则返回
+            if low_speed_flag == b'\x01':
+                print("检测到低速标志，函数返回")
+                return
+            
+            time.sleep(0.01)
+
+    def left_marvin_home(self, marvin_driver):
+        print(f"已为用户 {self.client.client_id} 执行Marvin左臂回到home位置")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -19.464, 11.7307, 55.1657, -30.5945, 141.4534, -10.4661, 64.3169 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
     def right_marvin_home(self, marvin_driver):
         marvin_driver.clear_set()
         marvin_driver.set_state(arm='B',state = 1) # 位置跟随模式
@@ -1049,20 +1095,888 @@ class UserSession:
         marvin_driver.send_cmd()
         time.sleep(3) #预留运动时间
 
-    def right_marvin_first_icp(self, marvin_driver, marvin_kine):
-         # 其实这里的第一步是先获取前端的服务，然后机械臂才会去运动
-        MASH_URL = "http://192.168.1.209:8000/api/latestpcdmask"
+    def right_marvin_second_capture(self, marvin_driver):
+        print(f"已为用户 {self.client.client_id} 执行Marvin右臂第二次拍照")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='B',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='B',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ 1.19, -82.97, 10.18,-56.21, 44.37, 26.81, 73.96]
+        marvin_driver.set_joint_cmd_pose(arm='B',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+    
+
+    #----------------------------------------------------------Marvin左臂装配任务处理---------------------------------------------------------
+    # 分割线------------------------------------------------------------------------------------------------
+    # 天机力控插入任务 -----------------------------------------------------------------------------------
+
+    def a_pre_zhua_state(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -34.98, -26.18, 101.09, -68.27, -60.17, -9.26, -32.30 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+    def a_pre_put_state(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -59.89, -39.58, 99.76, -117.60, -139.00, 28.97, 16.04 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+    def b_pre_zhua_state(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[-21.98, -65.93, 55.56, -77.83, -28.25, -7.57, -44.51 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+    def b_pre_put_state(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -6.24, -86.38, 51.40, -62.21, -71.55, 30.54, -32.42 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+    def a_zhua_sim(self, marvin_driver):
+        self.a_zhua_path = None
+        pre_put_pose = [ 300.26 * 0.001, 260.11 * 0.001, 575.26 * 0.001, -91.98, 56.18, -14.32]
+        pre_put_pose = self.marvin_kine.xyzabc_to_mat4x4(pre_put_pose)
+
+        robot_frame = self.robot_frames["left_tianji"]
+        frame_name = robot_frame.name
+
+        left_base = self.get_frame_transform_matrix(robot_frame)
+        qt7 = ampl.tf44_to_qt7( np.array(pre_put_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/ref_a_zhua_pose"
+        frame_pre_zhua_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
+        )
+
+        a_zhua_compensation_x = float(self.ui.a_zhua_compensation_x.value) * 0.001
+        a_zhua_compensation_y = float(self.ui.a_zhua_compensation_y.value) * 0.001
+        a_zhua_compensation_z = float(self.ui.a_zhua_compensation_z.value) * 0.001
+        a_zhua_compensation_a = self.ui.a_zhua_compensation_a.value
+        a_zhua_compensation_b = float(self.ui.a_zhua_compensation_b.value)          
+        a_zhua_compensation_c = float(self.ui.a_zhua_compensation_c.value)          
+        a_zhua_compensation_flange_x = float(self.ui.a_zhua_compensation_flange_x.value) * 0.001
+        a_zhua_compensation_flange_y = float(self.ui.a_zhua_compensation_flange_y.value) * 0.001
+        a_zhua_compensation_flange_z = float(self.ui.a_zhua_compensation_flange_z.value) * 0.001
+
+        left_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([a_zhua_compensation_x, a_zhua_compensation_y, a_zhua_compensation_z, 0, 0, 0]))
+        right_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([a_zhua_compensation_flange_x, a_zhua_compensation_flange_y, a_zhua_compensation_flange_z, a_zhua_compensation_a, a_zhua_compensation_b, a_zhua_compensation_c]))
+        pre_put_pose = np.array(pre_put_pose)
+        new_pose = left_matrix @ pre_put_pose @ right_matrix
+
+        # 进入到了求逆解的环节
+        qt7 = ampl.tf44_to_qt7( np.array(new_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/buchang_a_zhua_pose"
+        frame_buchang_a_zhua_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position, 
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01
+        )
+
+        # 仿真
+        ref_joints = [-34.98, -26.18, 101.09, -68.27, -60.17, -9.26, -32.30]
+
+        end_pose = new_pose
+        end_pose[0][3] *= 1000
+        end_pose[1][3] *= 1000
+        end_pose[2][3] *= 1000
+        end_ik = self.marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
+        # return
+        if end_ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = end_ik.m_Output_RetJoint.to_list()
+
+        save_path = Path(__file__).parent / "path_cache" / "a_zhua_path.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=20, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.a_zhua_path = parsed_data # 这样还没有单位转换
+        
+        # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
+        original_count = len(parsed_data)
+        if len(parsed_data) > 0:
+            sampled_indices = set()
+            # 保留第一个
+            sampled_indices.add(0)
+            # 保留最后一个
+            sampled_indices.add(len(parsed_data) - 1)
+            # 每100个取一个
+            for i in range(100, len(parsed_data) - 1, 100):
+                sampled_indices.add(i)
+            
+            # 按索引顺序排序并提取采样后的数据
+            sampled_indices = sorted(sampled_indices)
+            parsed_data = [parsed_data[i] for i in sampled_indices]
+            # 将每个值从角度转换为弧度
+            parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
+            print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
+
+        with self.ui.a_zhua_view_simulation:
+            # 如果已经存在进度条，先删除它
+            if hasattr(self, 'a_zhua_view_simulation_slider') and self.a_zhua_view_simulation_slider is not None:
+                try:
+                    self.a_zhua_view_simulation_slider.remove()
+                    print(f"已删除旧的进度条")
+                except Exception as e:
+                    print(f"删除旧进度条时出错: {e}")
+            
+            slider_name = f"用户{self.client.client_id}_轨迹"
+            self.a_zhua_view_simulation_slider = self.ui.server.gui.add_slider(
+                slider_name,
+                min=0.0,
+                max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
+                step=1,
+                initial_value=0,
+            )
+            
+            # 为进度条设置事件处理（槽函数）
+            @self.a_zhua_view_simulation_slider.on_update
+            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
+                """当进度条值变化时，更新仿真状态"""
+                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
+                num_steps = len(parsed_data)
+                step_index = max(0, min(step_index, num_steps - 1))
+                joint_config = parsed_data[step_index]
+                self.update_robot_visualization(
+                    "left_tianji", 
+                    joint_config,
+                    update_sliders=True,
+                    update_end_effector_state=True
+                )
+        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(parsed_data)}")
+        
+        # 函数结束后删除临时文件
+        if save_path.exists():
+            save_path.unlink()
+            print(f"已删除临时文件: {save_path}")
+
+    def a_put_sim(self, marvin_driver):
+        self.a_put_path = None
+        pre_put_pose = [ 297.73 * 0.001, 192.89 * 0.001, 326.71 * 0.001, -91.24, 0.17, -4.63]
+        pre_put_pose = self.marvin_kine.xyzabc_to_mat4x4(pre_put_pose)
+
+        robot_frame = self.robot_frames["left_tianji"]
+        frame_name = robot_frame.name
+
+        left_base = self.get_frame_transform_matrix(robot_frame)
+        qt7 = ampl.tf44_to_qt7( np.array(pre_put_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/ref_a_put_pose"
+        frame_pre_put_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
+        )
+
+        a_put_compensation_x = float(self.ui.a_put_compensation_x.value) * 0.001
+        a_put_compensation_y = float(self.ui.a_put_compensation_y.value) * 0.001
+        a_put_compensation_z = float(self.ui.a_put_compensation_z.value) * 0.001
+        a_put_compensation_a = float(self.ui.a_put_compensation_a.value)
+        a_put_compensation_b = float(self.ui.a_put_compensation_b.value)          
+        a_put_compensation_c = float(self.ui.a_put_compensation_c.value)          
+        a_put_compensation_flange_x = float(self.ui.a_put_compensation_flange_x.value) * 0.001
+        a_put_compensation_flange_y = float(self.ui.a_put_compensation_flange_y.value) * 0.001
+        a_put_compensation_flange_z = float(self.ui.a_put_compensation_flange_z.value) * 0.001
+
+        left_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([a_put_compensation_x, a_put_compensation_y, a_put_compensation_z, 0, 0, 0]))
+        right_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([a_put_compensation_flange_x, a_put_compensation_flange_y, a_put_compensation_flange_z, a_put_compensation_a, a_put_compensation_b, a_put_compensation_c]))
+        pre_put_pose = np.array(pre_put_pose)
+        new_pose = left_matrix @ pre_put_pose @ right_matrix
+
+        # 进入到了求逆解的环节
+        qt7 = ampl.tf44_to_qt7( np.array(new_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/buchang_a_zhua_pose"
+        frame_buchang_a_zhua_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position, 
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01
+        )
+
+        # 仿真
+        ref_joints = [-59.89, -39.58, 99.76, -117.60, -139.00, 28.97, 16.04]
+
+        end_pose = new_pose
+        end_pose[0][3] *= 1000
+        end_pose[1][3] *= 1000
+        end_pose[2][3] *= 1000
+        end_ik = self.marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
+        # return
+        if end_ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = end_ik.m_Output_RetJoint.to_list()
+
+        save_path = Path(__file__).parent / "path_cache" / "a_put_path.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=20, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.a_put_path = parsed_data # 这样还没有单位转换
+        
+        # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
+        original_count = len(parsed_data)
+        if len(parsed_data) > 0:
+            sampled_indices = set()
+            # 保留第一个
+            sampled_indices.add(0)
+            # 保留最后一个
+            sampled_indices.add(len(parsed_data) - 1)
+            # 每100个取一个
+            for i in range(100, len(parsed_data) - 1, 100):
+                sampled_indices.add(i)
+            
+            # 按索引顺序排序并提取采样后的数据
+            sampled_indices = sorted(sampled_indices)
+            parsed_data = [parsed_data[i] for i in sampled_indices]
+            # 将每个值从角度转换为弧度
+            parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
+            print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
+
+        with self.ui.a_put_view_simulation:
+            # 如果已经存在进度条，先删除它
+            if hasattr(self, 'a_put_view_simulation_slider') and self.a_put_view_simulation_slider is not None:
+                try:
+                    self.a_put_view_simulation_slider.remove()
+                    print(f"已删除旧的进度条")
+                except Exception as e:
+                    print(f"删除旧进度条时出错: {e}")
+            
+            slider_name = f"用户{self.client.client_id}_轨迹"
+            self.a_put_view_simulation_slider = self.ui.server.gui.add_slider(
+                slider_name,
+                min=0.0,
+                max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
+                step=1,
+                initial_value=0,
+            )
+            
+            # 为进度条设置事件处理（槽函数）
+            @self.a_put_view_simulation_slider.on_update
+            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
+                """当进度条值变化时，更新仿真状态"""
+                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
+                num_steps = len(parsed_data)
+                step_index = max(0, min(step_index, num_steps - 1))
+                joint_config = parsed_data[step_index]
+                self.update_robot_visualization(
+                    "left_tianji", 
+                    joint_config,
+                    update_sliders=True,
+                    update_end_effector_state=True
+                )
+        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(parsed_data)}")
+        
+        # 函数结束后删除临时文件
+        if save_path.exists():
+            save_path.unlink()
+            print(f"已删除临时文件: {save_path}")
+    
+    def b_zhua_sim(self, marvin_driver):
+        self.b_zhua_path = None
+        pre_put_pose = [ 492.02 * 0.001, 191.10 * 0.001, 152.78 * 0.001, 96.41, 47.84, 177.84]
+        pre_put_pose = self.marvin_kine.xyzabc_to_mat4x4(pre_put_pose)
+
+        robot_frame = self.robot_frames["left_tianji"]
+        frame_name = robot_frame.name
+
+        left_base = self.get_frame_transform_matrix(robot_frame)
+        qt7 = ampl.tf44_to_qt7( np.array(pre_put_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/ref_b_zhua_pose"
+        frame_pre_zhua_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
+        )
+
+        b_zhua_compensation_x = float(self.ui.b_zhua_compensation_x.value) * 0.001
+        b_zhua_compensation_y = float(self.ui.b_zhua_compensation_y.value) * 0.001
+        b_zhua_compensation_z = float(self.ui.b_zhua_compensation_z.value) * 0.001
+        b_zhua_compensation_a = float(self.ui.b_zhua_compensation_a.value)
+        b_zhua_compensation_b = float(self.ui.b_zhua_compensation_b.value)          
+        b_zhua_compensation_c = float(self.ui.b_zhua_compensation_c.value)          
+        b_zhua_compensation_flange_x = float(self.ui.b_zhua_compensation_flange_x.value) * 0.001
+        b_zhua_compensation_flange_y = float(self.ui.b_zhua_compensation_flange_y.value) * 0.001
+        b_zhua_compensation_flange_z = float(self.ui.b_zhua_compensation_flange_z.value) * 0.001
+
+        left_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([b_zhua_compensation_x, b_zhua_compensation_y, b_zhua_compensation_z, 0, 0, 0]))
+        right_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([b_zhua_compensation_flange_x, b_zhua_compensation_flange_y, b_zhua_compensation_flange_z, b_zhua_compensation_a, b_zhua_compensation_b, b_zhua_compensation_c]))
+        pre_put_pose = np.array(pre_put_pose)
+        new_pose = left_matrix @ pre_put_pose @ right_matrix
+
+        # 进入到了求逆解的环节
+        qt7 = ampl.tf44_to_qt7( np.array(new_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/buchang_b_zhua_pose"
+        frame_buchang_b_zhua_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position, 
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01
+        )
+
+        # 仿真
+        ref_joints = [-21.98, -65.93, 55.56, -77.83, -28.25, -7.57, -44.51]
+
+        end_pose = new_pose
+        end_pose[0][3] *= 1000
+        end_pose[1][3] *= 1000
+        end_pose[2][3] *= 1000
+        end_ik = self.marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
+        # return
+        if end_ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = end_ik.m_Output_RetJoint.to_list()
+
+        save_path = Path(__file__).parent / "path_cache" / "b_zhua_path.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=20, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.b_zhua_path = parsed_data # 这样还没有单位转换
+        
+        # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
+        original_count = len(parsed_data)
+        if len(parsed_data) > 0:
+            sampled_indices = set()
+            # 保留第一个
+            sampled_indices.add(0)
+            # 保留最后一个
+            sampled_indices.add(len(parsed_data) - 1)
+            # 每100个取一个
+            for i in range(100, len(parsed_data) - 1, 100):
+                sampled_indices.add(i)
+            
+            # 按索引顺序排序并提取采样后的数据
+            sampled_indices = sorted(sampled_indices)
+            parsed_data = [parsed_data[i] for i in sampled_indices]
+            # 将每个值从角度转换为弧度
+            parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
+            print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
+
+        with self.ui.b_zhua_view_simulation:
+            # 如果已经存在进度条，先删除它
+            if hasattr(self, 'b_zhua_view_simulation_slider') and self.b_zhua_view_simulation_slider is not None:
+                try:
+                    self.b_zhua_view_simulation_slider.remove()
+                    print(f"已删除旧的进度条")
+                except Exception as e:
+                    print(f"删除旧进度条时出错: {e}")
+            
+            slider_name = f"用户{self.client.client_id}_轨迹"
+            self.b_zhua_view_simulation_slider = self.ui.server.gui.add_slider(
+                slider_name,
+                min=0.0,
+                max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
+                step=1,
+                initial_value=0,
+            )
+            
+            # 为进度条设置事件处理（槽函数）
+            @self.b_zhua_view_simulation_slider.on_update
+            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
+                """当进度条值变化时，更新仿真状态"""
+                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
+                num_steps = len(parsed_data)
+                step_index = max(0, min(step_index, num_steps - 1))
+                joint_config = parsed_data[step_index]
+                self.update_robot_visualization(
+                    "left_tianji", 
+                    joint_config,
+                    update_sliders=True,
+                    update_end_effector_state=True
+                )
+        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(parsed_data)}")
+        
+        # 函数结束后删除临时文件
+        if save_path.exists():
+            save_path.unlink()
+            print(f"已删除临时文件: {save_path}")
+    
+    def b_put_sim(self, marvin_driver):
+        self.b_put_path = None
+        pre_put_pose = [492.95 * 0.001, 267.45 * 0.001, 18.37 * 0.001, -134.55, 85.22, -51.43]
+        pre_put_pose = self.marvin_kine.xyzabc_to_mat4x4(pre_put_pose)
+
+        robot_frame = self.robot_frames["left_tianji"]
+        frame_name = robot_frame.name
+
+        left_base = self.get_frame_transform_matrix(robot_frame)
+        qt7 = ampl.tf44_to_qt7( np.array(pre_put_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/ref_b_put_pose"
+        frame_pre_put_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
+        )
+
+        b_put_compensation_x = float(self.ui.b_put_compensation_x.value) * 0.001
+        b_put_compensation_y = float(self.ui.b_put_compensation_y.value) * 0.001
+        b_put_compensation_z = float(self.ui.b_put_compensation_z.value) * 0.001
+        b_put_compensation_a = float(self.ui.b_zhua_compensation_a.value)
+        b_put_compensation_b = float(self.ui.b_put_compensation_b.value)          
+        b_put_compensation_c = float(self.ui.b_put_compensation_c.value)          
+        b_put_compensation_flange_x = float(self.ui.b_put_compensation_flange_x.value) * 0.001
+        b_put_compensation_flange_y = float(self.ui.b_put_compensation_flange_y.value) * 0.001
+        b_put_compensation_flange_z = float(self.ui.b_put_compensation_flange_z.value) * 0.001
+
+        left_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([b_put_compensation_x, b_put_compensation_y, b_put_compensation_z, 0, 0, 0]))
+        right_matrix = np.array(self.marvin_kine.xyzabc_to_mat4x4([b_put_compensation_flange_x, b_put_compensation_flange_y, b_put_compensation_flange_z, b_put_compensation_a, b_put_compensation_b, b_put_compensation_c]))
+        pre_put_pose = np.array(pre_put_pose)
+        new_pose = left_matrix @ pre_put_pose @ right_matrix
+
+        # 进入到了求逆解的环节
+        qt7 = ampl.tf44_to_qt7( np.array(new_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/buchang_b_put_pose"
+        frame_buchang_b_put_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position, 
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01
+        )
+
+        # 仿真
+        ref_joints = [-6.24, -86.38, 51.40, -62.21, -71.55, 30.54, -32.42]
+
+        end_pose = new_pose
+        end_pose[0][3] *= 1000
+        end_pose[1][3] *= 1000
+        end_pose[2][3] *= 1000
+        end_ik = self.marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
+        # return
+        if end_ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = end_ik.m_Output_RetJoint.to_list()
+
+        save_path = Path(__file__).parent / "path_cache" / "b_put_path.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=20, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.b_put_path = parsed_data # 这样还没有单位转换
+        
+        # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
+        original_count = len(parsed_data)
+        if len(parsed_data) > 0:
+            sampled_indices = set()
+            # 保留第一个
+            sampled_indices.add(0)
+            # 保留最后一个
+            sampled_indices.add(len(parsed_data) - 1)
+            # 每100个取一个
+            for i in range(100, len(parsed_data) - 1, 100):
+                sampled_indices.add(i)
+            
+            # 按索引顺序排序并提取采样后的数据
+            sampled_indices = sorted(sampled_indices)
+            parsed_data = [parsed_data[i] for i in sampled_indices]
+            # 将每个值从角度转换为弧度
+            parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
+            print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
+
+        with self.ui.b_put_view_simulation:
+            # 如果已经存在进度条，先删除它
+            if hasattr(self, 'b_put_view_simulation_slider') and self.b_put_view_simulation_slider is not None:
+                try:
+                    self.b_put_view_simulation_slider.remove()
+                    print(f"已删除旧的进度条")
+                except Exception as e:
+                    print(f"删除旧进度条时出错: {e}")
+            
+            slider_name = f"用户{self.client.client_id}_轨迹"
+            self.b_put_view_simulation_slider = self.ui.server.gui.add_slider(
+                slider_name,
+                min=0.0,
+                max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
+                step=1,
+                initial_value=0,
+            )
+            
+            # 为进度条设置事件处理（槽函数）
+            @self.b_put_view_simulation_slider.on_update
+            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
+                """当进度条值变化时，更新仿真状态"""
+                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
+                num_steps = len(parsed_data)
+                step_index = max(0, min(step_index, num_steps - 1))
+                joint_config = parsed_data[step_index]
+                self.update_robot_visualization(
+                    "left_tianji", 
+                    joint_config,
+                    update_sliders=True,
+                    update_end_effector_state=True
+                )
+        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(parsed_data)}")
+        
+        # 函数结束后删除临时文件
+        if save_path.exists():
+            save_path.unlink()
+            print(f"已删除临时文件: {save_path}")
+    
+    def a_zhua_real_do(self, marvin_driver):
+        if self.a_zhua_path is None:
+            print("a_zhua_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        for joint_config in self.a_zhua_path:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def a_put_real_do(self, marvin_driver):
+        if self.a_put_path is None:
+            print("a_put_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        for joint_config in self.a_put_path:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def b_zhua_real_do(self, marvin_driver):
+        if self.b_zhua_path is None:
+            print("b_zhua_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        for joint_config in self.b_zhua_path:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def b_put_real_do(self, marvin_driver):
+        if self.b_put_path is None:
+            print("b_put_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        for joint_config in self.b_put_path:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def a_zhua_real_do_reverse(self, marvin_driver):
+        if self.a_zhua_path is None:
+            print("a_zhua_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        for joint_config in self.a_zhua_path[::-1]:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def a_put_real_do_reverse(self, marvin_driver):
+        if self.a_put_path is None:
+            print("a_put_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        for joint_config in self.a_put_path[::-1]:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def b_zhua_real_do_reverse(self, marvin_driver):
+        if self.b_zhua_path is None:
+            print("b_zhua_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        for joint_config in self.b_zhua_path[::-1]:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def b_put_real_do_reverse(self, marvin_driver):
+        if self.b_put_path is None:
+            print("b_put_path 为空")
+            return
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        for joint_config in self.b_put_path[::-1]:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+    
+    def a_whole_process(self, marvin_driver):
+        pass
+    
+    def b_whole_process(self, marvin_driver):
+        pass
+    
+    def b_insert_real_do(self, marvin_driver):
+        pass
+    
+    def b_insert_real_do_reverse(self, marvin_driver):
+        pass
+
+
+    #----------------------------------------------------------Marvin左臂装配任务处理---------------------------------------------------------
+    # 分割线------------------------------------------------------------------------------------------------
+    # 天机力控插入任务 -----------------------------------------------------------------------------------
+    def first_insert_capture(self, marvin_driver):
+        print(f"已为用户 {self.client.client_id} 执行天机第一次力控插入拍照")
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='B',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='B',velRatio=5, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -14.55, 27.22, -34.54, -107.14, 99.91, 45.01, 59.27 ]
+        marvin_driver.set_joint_cmd_pose(arm='B',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+    def first_insert_icp(self, marvin_driver, marvin_kine):
+        self.right_marvin_home(marvin_driver)
+
+        MASH_URL = "http://192.168.1.192:8000/api/latestpcdfull"
         response = requests.get(MASH_URL)
         print(f"response: {response.json()}")
-        pcd_url = response.json()["pcd_mask_url"]
+        pcd_url = response.json()["pcd_full_url"]
 
-        ref_raw_locolizaiton = [[ 0.60605383, 0.64962685, -0.45900303, 0.63666517],
-                                [ 0.11070016, -0.64032441, -0.7600857, 0.59818721],
-                                [-0.78768283, 0.40984124, -0.45998499, 0.14560415],
-                                [ 0.0, 0.0, 0.0, 1.0]]
+        pcd_url = pcd_url.replace("full", "contours")
+        print(f"pcd_url: {pcd_url}")
+        
+        # 下载 pcd 文件到本地
+        local_pcd_path = Path(__file__).parent / "camera_cache" / "icp" / "first_ply.ply"
+        local_pcd_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
+        try:
+            pcd_response = requests.get(pcd_url, timeout=30)
+            pcd_response.raise_for_status()  # 如果状态码不是200会抛出异常
+            
+            with open(local_pcd_path, 'wb') as f:
+                f.write(pcd_response.content)
+            print(f"成功下载 pcd 文件到: {local_pcd_path}")
+        except requests.exceptions.RequestException as e:
+            print(f"下载 pcd 文件失败: {e}")
+            raise
+        
 
-        # 调用ICP配准服务获取变换矩阵
-        # TODO 后续这里尽可能的读取实际的xyz abc进来的
+        # pcd_url = pcd_url.replace("full", "contours")
+        # print(f"pcd_url: {pcd_url}")
+
+        ref_raw_locolizaiton = [[-0.94879508,  0.09284653, -0.30193925,  0.2299836 ],
+                                [-0.25097474,  0.35888863,  0.89900535, -0.70343602],
+                                [ 0.19183217,  0.92875111, -0.31720963,  0.32151666],
+                                [ 0.    ,      0.    ,      0.    ,      1.    ]]
         cali_path = Path(__file__).parent / "camera_cache" / "icp" / "handeye_hand.npy"
         cali_matrix = np.load(cali_path)
 
@@ -1071,7 +1985,7 @@ class UserSession:
         # 调用ICP配准服务获取变换矩阵
         raw_locolizaiton = self.get_icp_transformation(
             pcd_url=pcd_url,
-            mesh_url="http://192.168.1.206:9000/storage/dualp/part_04_mm.ply"
+            mesh_url="http://192.168.1.206:9000/storage/dualp/first_insert.ply"
         )
 
         print(f'raw_locolizaiton: {raw_locolizaiton}')
@@ -1093,7 +2007,7 @@ class UserSession:
         raw_locolizaiton_inv = np.linalg.inv(raw_locolizaiton)
         print(f'raw_locolizaiton_inv: {raw_locolizaiton_inv}')
 
-        camera_pose = marvin_kine.xyzabc_to_mat4x4([212.17 * 0.001, 87.04 * 0.001, 572.86 * 0.001, 126.67, 40.79, 58.42])
+        camera_pose = marvin_kine.xyzabc_to_mat4x4([120.94 * 0.001, -241.91 * 0.001, 399.83 * 0.001, 163.48, -21.52, -4.00])
 
         last_raw_locolizaiton =  camera_pose @ cali_matrix @ raw_locolizaiton_inv
         last_camera_pose =  camera_pose @ cali_matrix
@@ -1116,22 +2030,24 @@ class UserSession:
         qt7 = ampl.tf44_to_qt7( np.array(last_raw_locolizaiton))
         position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
         wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
-        frame_a_name = f"{frame_name}/model_7"
+        frame_a_name = f"{frame_name}/model_first_insert"
         frame_a = self.ui.server.scene.add_frame(
             name=frame_a_name,
             show_axes=True,  # 显示坐标轴以便调试
             position=position,
             wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
         )       
 
         # 将三角网格添加到frame A下
-        ply_path = "/home/daidai/FlashRoboOrch/tests/data/zhuaqu_pcd/part_04_mm.ply"
+        ply_path = "/home/daidai/FlashRoboOrch/tests/data/zhuaqu_pcd/first_insert.ply"
         vertices, faces = ampl.read_trimesh(ply_path)
         print(f"vertices shape: {vertices.shape}")
         print(f"faces shape: {faces.shape}")
         vertices = vertices * 0.001  # 将每个顶点的位置值乘以 0.001（从毫米转换为米）
             
-        mesh_name = f"{frame_a_name}/icp_1"
+        mesh_name = f"{frame_a_name}/icp_first_insert"
         self.ui.server.scene.add_mesh_simple(
             name=mesh_name,
             vertices=vertices,
@@ -1142,7 +2058,7 @@ class UserSession:
         qt7 = ampl.tf44_to_qt7( np.array(last_camera_pose))
         position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
         wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
-        frame_b_name = f"{frame_name}/model_mask"
+        frame_b_name = f"{frame_name}/model_mask_first_insert"
         frame_b = self.ui.server.scene.add_frame(
             name=frame_b_name,
             show_axes=False,  # 显示坐标轴以便调试
@@ -1150,7 +2066,7 @@ class UserSession:
             wxyz=wxyz,
         )
 
-        ply_path = "/home/daidai/FlashRoboOrch/tests/data/zhuaqu_pcd/pcd_mask_1.ply"
+        ply_path = local_pcd_path
         pcd_v, pcd_c, _ = ampl.read_pointcloud(ply_path)
         pcd_v = pcd_v * 0.001  # 将每个点的位置值乘以 0.001
         mesh_name = f"{frame_b_name}/icp_1"
@@ -1158,497 +2074,126 @@ class UserSession:
             name=mesh_name,
             points=pcd_v,
             colors=pcd_c,
-            point_size=0.01,  # 点的大小
+            point_size=0.001,  # 点的大小
         )
         print(f"点云已添加到frame B下: {mesh_name}")    
     
 
         # 这个是在urdf下的坐标系下的变换了
-        self.first_assem_put_pose = frame_transform_matrix @ last_raw_locolizaiton
+        self.first_insert_pose = frame_transform_matrix @ last_raw_locolizaiton
 
-    def right_marvin_second_capture(self, marvin_driver):
-        print(f"已为用户 {self.client.client_id} 执行Marvin右臂第二次拍照")
+    def first_insert_get_object(self, marvin_driver):
         marvin_driver.clear_set()
-        marvin_driver.set_state(arm='B',state = 1) # 位置跟随模式
-        marvin_driver.set_vel_acc(arm='B',velRatio=5, AccRatio=10)
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -87.21, 29.49, 168.52, -30.5945, 141.4534, -10.4661, 64.3169 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
         marvin_driver.send_cmd()
         time.sleep(0.5)
+
+        # 等待低速标志
+        self.wait_for_low_speed_flag(marvin_driver)
+
+        
+        # 先运行到待抓取的地方然后抓取工件
+        marvin_driver.clear_set()
+        joint_cmd_1=[-87.21, 29.49, 168.52, -61.45, 92.16, -10.01, -0.27]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
+        self.left_marvin_grip(marvin_driver)
+        time.sleep(5)
+
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[-96.58, -77.58, 163.24, -83.95, 95.08, -13.90, 86.49]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[-70.50, -77.09, 69.95, -67.71, 98.4, -19.79, 77.47]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
+
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[-70.50, -77.09, 69.95, -67.71, -34.91, -19.79, -71.48]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
+
+        # 四五六轴转
+        marvin_driver.clear_set()
+        joint_cmd_1=[-44.28, -100.20, 49.30, -103.92, -34.91, -10.60, -71.48]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(5)
+
+    def first_insert_back_object(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=10, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[-44.28, -100.20, 49.30, -103.92, -34.91, -10.60, -71.48]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
         
         marvin_driver.clear_set()
-        joint_cmd_1=[ 1.19, -82.97, 10.18,-56.21, 44.37, 26.81, 73.96]
-        marvin_driver.set_joint_cmd_pose(arm='B',joints=joint_cmd_1)
+        joint_cmd_1=[-70.50, -90.09, 69.95, -67.71, -34.91, -19.79, -71.48]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
         marvin_driver.send_cmd()
-        time.sleep(3) #预留运动时间
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
 
-    def right_marvin_second_icp(self, marvin_driver, marvin_kine): 
-        # 其实这里的第一步是先获取前端的服务，然后机械臂才会去运动
-        MASH_URL = "http://192.168.1.209:8000/api/latestpcdmask"
-        response = requests.get(MASH_URL)
-        print(f"response: {response.json()}")
-        pcd_url = response.json()["pcd_mask_url"]
+        marvin_driver.clear_set()
+        joint_cmd_1=[-70.50, -77.09, 69.95, -67.71, 98.4, -19.79, 77.47]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
 
-        ref_raw_locolizaiton = [
-            [
-                -0.9890800714492798,
-                0.1187606081366539,
-                -0.0872708335518837,
-                0.12945935130119324
-            ],
-            [
-                0.14450779557228088,
-                0.6652054190635681,
-                -0.7325431108474731,
-                0.5571730136871338
-            ],
-            [
-                -0.028944265097379684,
-                -0.7371553182601929,
-                -0.6751030087471008,
-                0.49707046151161194
-            ],
-            [
-                0,
-                0,
-                0,
-                1
-            ]
-        ]
-
-        # 调用ICP配准服务获取变换矩阵
-        # TODO 后续这里尽可能的读取实际的xyz abc进来的
-        cali_path = Path(__file__).parent / "camera_cache" / "icp" / "handeye_hand.npy"
-        cali_matrix = np.load(cali_path)
-
-        print(f'cali_matrix: {cali_matrix}')
-
-        # 调用ICP配准服务获取变换矩阵
-        raw_locolizaiton = self.get_icp_transformation(
-            pcd_url=pcd_url,
-            mesh_url="http://192.168.1.206:9000/storage/dualp/part_05_mm.ply"
-        )
-        
-        # 如果服务调用失败，使用默认的硬编码值作为后备
-        if raw_locolizaiton is None:
-            print("使用默认的 raw_locolizaiton 矩阵")
-            raw_locolizaiton = ref_raw_locolizaiton
-
-
-        raw_locolizaiton = np.array(raw_locolizaiton)
-        print(f'raw_locolizaiton: {raw_locolizaiton}')
-        
-        # 计算矩阵的逆
-        raw_locolizaiton_inv = np.linalg.inv(raw_locolizaiton)
-        print(f'raw_locolizaiton_inv: {raw_locolizaiton_inv}')
-
-        camera_pose = marvin_kine.xyzabc_to_mat4x4([480.57 * 0.001, -5.98 * 0.001, -95.91 * 0.001, -154.49, 39.60, 106.45])
-
-        last_raw_locolizaiton =  camera_pose @ cali_matrix @ raw_locolizaiton_inv
-        last_camera_pose =  camera_pose @ cali_matrix
-
-
-        robot_frame = self.robot_frames["right_tianji"]
-        frame_name = robot_frame.name
-        
-        # 获取 robot_frame 的变换矩阵
-        frame_transform_matrix = self.get_frame_transform_matrix(robot_frame)
-        print(f"robot_frame 变换矩阵:\n{frame_transform_matrix}")
-
-        model_in_base_ref = frame_transform_matrix @ camera_pose @ cali_matrix @ np.linalg.inv(ref_raw_locolizaiton)
-        model_in_base_now = frame_transform_matrix @ last_raw_locolizaiton
-        model_in_base_now = self.align_model_transform_in_base(model_in_base_ref, model_in_base_now)
-        print(f"model_in_base_now: {model_in_base_now}")
-        last_raw_locolizaiton = np.linalg.inv(frame_transform_matrix) @ model_in_base_now
-
-
-        qt7 = ampl.tf44_to_qt7( np.array(last_raw_locolizaiton))
-        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
-        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
-        frame_a_name = f"{frame_name}/model_7"
-        frame_a = self.ui.server.scene.add_frame(
-            name=frame_a_name,
-            show_axes=False,  # 显示坐标轴以便调试
-            position=position,
-            wxyz=wxyz,
-        )       
-
-        # 将三角网格添加到frame A下
-        ply_path = "/home/daidai/FlashRoboOrch/tests/data/zhuaqu_pcd/part_05_mm.ply"
-        vertices, faces = ampl.read_trimesh(ply_path)
-        print(f"vertices shape: {vertices.shape}")
-        print(f"faces shape: {faces.shape}")
-        vertices = vertices * 0.001  # 将每个顶点的位置值乘以 0.001（从毫米转换为米）
-            
-        mesh_name = f"{frame_a_name}/icp_2"
-        self.ui.server.scene.add_mesh_simple(
-            name=mesh_name,
-            vertices=vertices,
-            faces=faces,
-        )
-        print(f"三角网格已添加到frame A下: {mesh_name}")
-
-        qt7 = ampl.tf44_to_qt7( np.array(last_camera_pose))
-        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
-        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
-        frame_b_name = f"{frame_name}/model_mask"
-        frame_b = self.ui.server.scene.add_frame(
-            name=frame_b_name,
-            show_axes=False,  # 显示坐标轴以便调试
-            position=position,
-            wxyz=wxyz,
-        )
-
-        ply_path = "/home/daidai/FlashRoboOrch/tests/data/zhuaqu_pcd/pcd_mask.ply"
-        pcd_v, pcd_c, _ = ampl.read_pointcloud(ply_path)
-        pcd_v = pcd_v * 0.001  # 将每个点的位置值乘以 0.001
-        mesh_name = f"{frame_b_name}/icp_2"
-        self.ui.server.scene.add_point_cloud(
-            name=mesh_name,
-            points=pcd_v,
-            colors=pcd_c,
-            point_size=0.01,  # 点的大小
-        )
-        print(f"点云已添加到frame B下: {mesh_name}")    
-    
-
-        # 这个是在urdf下的坐标系下的变换了
-        self.first_assem_zhua_pose = frame_transform_matrix @ last_raw_locolizaiton
+        marvin_driver.clear_set()
+        joint_cmd_1=[-96.58, -77.58, 163.24, -83.95, 95.08, -13.90, 86.49]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(10)
  
-    def left_marvin_zhua_pose(self, marvin_driver, marvin_kine):
-        R = np.array([
-            [0, -1, 0],
-            [-1, 0, 0],
-            [0, 0, -1]
-        ])
-
-        t = np.array([0.0, 0.0, 0.26])
-
-        T = np.eye(4)
-        T[:3, :3] = R
-        T[:3, 3] = t
+    def first_insert_sim(self, marvin_driver, marvin_kine):
+        # 从 UI 读取补偿值并转换为 float
+        compensation_x = float(self.ui.first_insert_compensation_x.value)
+        compensation_y = float(self.ui.first_insert_compensation_y.value)
+        compensation_z = float(self.ui.first_insert_compensation_z.value)
+        compensation_a = float(self.ui.first_insert_compensation_a.value)
+        compensation_b = float(self.ui.first_insert_compensation_b.value)
+        compensation_c = float(self.ui.first_insert_compensation_c.value)
+        compensation_wp_x = float(self.ui.first_insert_compensation_wp_x.value)
+        compensation_wp_y = float(self.ui.first_insert_compensation_wp_y.value)
+        compensation_wp_z = float(self.ui.first_insert_compensation_wp_z.value)
+        
+        print(f"读取补偿值: X={compensation_x} mm, Y={compensation_y} mm, Z={compensation_z} mm, "
+              f"A={compensation_a}°, B={compensation_b}°, C={compensation_c}°")
+        
+        # 这个是预示教的位置
+        pre_put_pose = [ 309.81 * 0.001, 124.87 * 0.001, -22.12 * 0.001, 55.43, 2.86, 176.27]
+        pre_put_pose = self.marvin_kine.xyzabc_to_mat4x4(pre_put_pose)
 
         robot_frame = self.robot_frames["left_tianji"]
         frame_name = robot_frame.name
+
         left_base = self.get_frame_transform_matrix(robot_frame)
-
-        # 后面是可以补偿这个值的
-        pre_zhua_pose = [369.54 * 0.001, 212.06 * 0.001, 556.58 * 0.001, 86.56, -58.18, 176.96 ]
-        pre_zhua_pose = marvin_kine.xyzabc_to_mat4x4(pre_zhua_pose)
-
-        qt7 = ampl.tf44_to_qt7( np.array(pre_zhua_pose))
-        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
-        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
-        frame_b_name = f"{frame_name}/pre_zhua_pose"
-        frame_pre_zhua_pose = self.ui.server.scene.add_frame(
-            name=frame_b_name,
-            show_axes=True,  # 显示坐标轴以便调试
-            position=position,
-            wxyz=wxyz,
-        )
-
-
-        real_zhua_pose = np.linalg.inv(left_base) @ self.first_assem_zhua_pose @ T
-        qt7 = ampl.tf44_to_qt7( np.array(real_zhua_pose))
-        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
-        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
-        frame_c_name = f"{frame_name}/real_zhua_pose"
-        frame_real_zhua_pose = self.ui.server.scene.add_frame(
-            name=frame_c_name,
-            show_axes=True,  # 显示坐标轴以便调试
-            position=position,
-            wxyz=wxyz,
-        )
-
-        self.first_assem_zhua_pose = real_zhua_pose
-    
-    def left_marvin_zhua_l(self, marvin_driver, marvin_kine):
-        ref_joints = [ -18.5, -17.77, 52.43, -61.28, 149.22, -10.41, 56.33]
-
-        end_pose = self.first_assem_zhua_pose
-        end_pose[0][3] *= 1000
-        end_pose[1][3] *= 1000
-        end_pose[2][3] *= 1000
-
-        print(f"end_pose: {end_pose}")
-
-        end_ik = marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
-        print(f"end_ik: {end_ik}")
-        joint_data = end_ik.m_Output_RetJoint.to_list()
-        print(f"joint_data: {joint_data}")
-
-        save_path = Path(__file__).parent / "path_cache" / "left_marvin_zhua_l.txt"
-        success = marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=5, save_path=str(save_path) )
-        if success:
-            print("movel 求解成功")
-        else:
-            print("movel 求解失败")
-
-        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
-        parsed_data = []
-        with open(save_path, 'r') as f:
-            lines = f.readlines()
-            # 跳过第一行（PoinType=9@6557），从第二行开始解析
-            for line in lines[1:]:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
-                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
-                match = re.search(pattern, line)
-                if match:
-                    values = [float(match.group(i)) for i in range(1, 8)]
-                    parsed_data.append(values)
-        
-        print(f"成功解析 {len(parsed_data)} 行数据")
-        
-        # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
-        original_count = len(parsed_data)
-        if len(parsed_data) > 0:
-            sampled_indices = set()
-            # 保留第一个
-            sampled_indices.add(0)
-            # 保留最后一个
-            sampled_indices.add(len(parsed_data) - 1)
-            # 每100个取一个
-            for i in range(100, len(parsed_data) - 1, 100):
-                sampled_indices.add(i)
-            
-            # 按索引顺序排序并提取采样后的数据
-            sampled_indices = sorted(sampled_indices)
-            parsed_data = [parsed_data[i] for i in sampled_indices]
-            self.zhua_in_path = parsed_data # 这样还没有单位转换
-            # 将每个值从角度转换为弧度
-            parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
-            print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
-
-        with self.ui.left_marvin_zhua_view_simulation:
-            slider_name = f"用户{self.client.client_id}_轨迹"
-            self.pre_put_moveL_simulation_slider = self.ui.server.gui.add_slider(
-                slider_name,
-                min=0.0,
-                max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
-                step=1,
-                initial_value=0,
-            )
-            
-            # 为进度条设置事件处理（槽函数）
-            @self.pre_put_moveL_simulation_slider.on_update
-            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
-                """当进度条值变化时，更新仿真状态"""
-                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
-                num_steps = len(parsed_data)
-                step_index = max(0, min(step_index, num_steps - 1))
-                joint_config = parsed_data[step_index]
-                self.update_robot_visualization(
-                    "left_tianji", 
-                    joint_config,
-                    update_sliders=True,
-                    update_end_effector_state=True
-                )
-        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(parsed_data)}")
-        
-        # 函数结束后删除临时文件
-        if save_path.exists():
-            save_path.unlink()
-            print(f"已删除临时文件: {save_path}")
-
-    def left_marvin_zhua_in(self, marvin_driver):
-        print(f"已为用户 {self.client.client_id} 执行Marvin左臂抓取进近")
-        if self.zhua_in_path is None:
-            print("抓取进近的movel路径为空")
-            return
-
-        for joint_config in self.zhua_in_path:
-            marvin_driver.clear_set()
-            joint_cmd_1=joint_config
-            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
-            marvin_driver.send_cmd()
-            time.sleep(0.2)  #预留运动时间
-
-    def left_marvin_zhua_out(self, marvin_driver):
-        print(f"已为用户 {self.client.client_id} 执行Marvin左臂抓取退出")
-        if self.zhua_in_path is None:
-            print("抓取进近的movel路径为空")
-            return
-
-        for joint_config in self.zhua_in_path[::-1]:
-            marvin_driver.clear_set()
-            joint_cmd_1=joint_config
-            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
-            marvin_driver.send_cmd()
-            time.sleep(0.2)  #预留运动时间
-
-    #----------------------------------------------------------Marvin左臂装配任务处理----------------------------------------------------------
-    def left_marvin_home(self, marvin_driver):
-        print(f"已为用户 {self.client.client_id} 执行Marvin左臂回到home位置")
-        marvin_driver.clear_set()
-        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
-        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
-        marvin_driver.send_cmd()
-        time.sleep(0.5)
-        
-        marvin_driver.clear_set()
-        joint_cmd_1=[ -19.464, 11.7307, 55.1657, -30.5945, 141.4534, -10.4661, 64.3169 ]
-        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
-        marvin_driver.send_cmd()
-        time.sleep(3) #预留运动时间
-
-    def left_marvin_pre_zhua_put_movel(self, marvin_driver, marvin_kine):
-        ref_joints = [ -18.5, -17.77, 52.43, -61.28, 149.22, -10.41, 56.33]
-        ref_end_joints = [ 1.09, -95.91, 24.81, -45.18, 140.79, -47.54, 60.27]
-
-        save_path = Path(__file__).parent / "path_cache" / "pre_zhua_put_movel.txt"
-        success = marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=ref_end_joints, vel=20, save_path=str(save_path) )
-        if success:
-            print("movel 求解成功")
-        else:
-            print("movel 求解失败")
-
-        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
-        parsed_data = []
-        with open(save_path, 'r') as f:
-            lines = f.readlines()
-            # 跳过第一行（PoinType=9@6557），从第二行开始解析
-            for line in lines[1:]:
-                line = line.strip()
-                if not line:
-                    continue
-                
-                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
-                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
-                match = re.search(pattern, line)
-                if match:
-                    values = [float(match.group(i)) for i in range(1, 8)]
-                    parsed_data.append(values)
-        
-        print(f"成功解析 {len(parsed_data)} 行数据")
-        self.pre_zhua_to_pre_put_movel_path = parsed_data # 这样还没有单位转换
-        
-        # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
-        original_count = len(parsed_data)
-        if len(parsed_data) > 0:
-            sampled_indices = set()
-            # 保留第一个
-            sampled_indices.add(0)
-            # 保留最后一个
-            sampled_indices.add(len(parsed_data) - 1)
-            # 每100个取一个
-            for i in range(100, len(parsed_data) - 1, 100):
-                sampled_indices.add(i)
-            
-            # 按索引顺序排序并提取采样后的数据
-            sampled_indices = sorted(sampled_indices)
-            parsed_data = [parsed_data[i] for i in sampled_indices]
-            # print(f"pre_zhua_to_pre_put_movel_path: {self.pre_zhua_to_pre_put_movel_path[-1]}")
-            # 将每个值从角度转换为弧度
-            parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
-            print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
-
-        with self.ui.left_marvin_pre_zhua_put_movel_view_simulation:
-            slider_name = f"用户{self.client.client_id}_轨迹"
-            self.pre_put_moveL_simulation_slider = self.ui.server.gui.add_slider(
-                slider_name,
-                min=0.0,
-                max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
-                step=1,
-                initial_value=0,
-            )
-            
-            # 为进度条设置事件处理（槽函数）
-            @self.pre_put_moveL_simulation_slider.on_update
-            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
-                """当进度条值变化时，更新仿真状态"""
-                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
-                num_steps = len(parsed_data)
-                step_index = max(0, min(step_index, num_steps - 1))
-                joint_config = parsed_data[step_index]
-                self.update_robot_visualization(
-                    "left_tianji", 
-                    joint_config,
-                    update_sliders=True,
-                    update_end_effector_state=True
-                )
-        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(parsed_data)}")
-        
-        # 函数结束后删除临时文件
-        if save_path.exists():
-            save_path.unlink()
-            print(f"已删除临时文件: {save_path}")
-
-    def left_marvin_pre_zhua_to_put(self, marvin_driver):
-        marvin_driver.clear_set()
-        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
-        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
-        marvin_driver.send_cmd()
-        time.sleep(0.5)
-        print(f"已为用户 {self.client.client_id} 实机执行Marvin左臂预抓取到预装配位置")
-        if self.pre_zhua_to_pre_put_movel_path is None:
-            print("预抓取到预装配的movel路径为空")
-            return
-
-        for joint_config in self.pre_zhua_to_pre_put_movel_path:
-            marvin_driver.clear_set()
-            joint_cmd_1=joint_config
-            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
-            marvin_driver.send_cmd()
-            time.sleep(0.02)  #预留运动时间
-
-    def left_marvin_pre_zhua_to_put_reverse(self, marvin_driver):
-        marvin_driver.clear_set()
-        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
-        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
-        marvin_driver.send_cmd()
-        time.sleep(0.5)
-
-        print(f"已为用户 {self.client.client_id} 实机执行Marvin左臂回退到预抓取位置")
-        if self.pre_zhua_to_pre_put_movel_path is None:
-            print("预抓取到预装配的movel路径为空")
-            return
-
-        for joint_config in self.pre_zhua_to_pre_put_movel_path[::-1]:
-            marvin_driver.clear_set()
-            joint_cmd_1=joint_config
-            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
-            marvin_driver.send_cmd()
-            time.sleep(0.02)  #预留运动时间
-
-    # 左臂从home 过度到 预抓取位置 
-    def left_marvin_pre_zhua_move(self, marvin_driver):
-        print(f"已为用户 {self.client.client_id} 执行Marvin左臂到预抓取位置")
-        marvin_driver.clear_set()
-        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
-        marvin_driver.set_vel_acc(arm='A',velRatio=5, AccRatio=10)
-        marvin_driver.send_cmd()
-        time.sleep(0.5)
-        
-        marvin_driver.clear_set()
-        joint_cmd_1=[ -18.50, -17.77, 52.43, -61.28, 149.22, -10.41, 56.33]
-        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
-        marvin_driver.send_cmd()
-        time.sleep(3) #预留运动时间
-
-    # 左臂放置的姿态
-    def left_marvin_put_pose(self, marvin_driver, marvin_kine):
-        R = np.array([
-            [-1, 0, 0],
-            [0, 0, -1],
-            [0, -1, 0]
-        ])
-
-        t = np.array([-0.081, 0.3, -0.145])
-
-        T = np.eye(4)
-        T[:3, :3] = R
-        T[:3, 3] = t
-
-        robot_frame = self.robot_frames["left_tianji"]
-        frame_name = robot_frame.name
-        left_base = self.get_frame_transform_matrix(robot_frame)
-
-        # 后面是可以补偿这个值的
-        pre_put_pose = [497.75 * 0.001, 200.11 * 0.001, -86.07 * 0.001, 102.95, -87.24, 165.47 ]
-        pre_put_pose = marvin_kine.xyzabc_to_mat4x4(pre_put_pose)
-
         qt7 = ampl.tf44_to_qt7( np.array(pre_put_pose))
         position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
         wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
@@ -1658,41 +2203,76 @@ class UserSession:
             show_axes=True,  # 显示坐标轴以便调试
             position=position,
             wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
         )
+        
+        # 这里生成粗定位的姿态
+        R = np.array([
+          [  0.0000000,  0.7071068, -0.7071068],
+          [  0.0000000,  0.7071068,  0.7071068],
+          [  1.0000000, -0.0000000,  0.0000000 ]
+        ])
+
+        t = np.array([0.155541, -0.04, 0.02])
+
+        T1 = np.eye(4)
+        T1[:3, :3] = R
+        T1[:3, 3] = t
 
 
-        real_put_pose = np.linalg.inv(left_base) @ self.first_assem_put_pose @ T
+        origin_insert_pose = self.first_insert_pose
+
+        # 这里就是作用全部补偿的地方， 包括工件坐标系的旋转和平移
+        compensation_wp_pose = [compensation_wp_x * 0.001, compensation_wp_y * 0.001, compensation_wp_z * 0.001, 0, 0, 0]
+        compensation_wp_pose = self.marvin_kine.xyzabc_to_mat4x4(compensation_wp_pose)
+        real_put_pose =  origin_insert_pose @compensation_wp_pose @ T1
+        real_put_pose = np.linalg.inv(left_base) @ real_put_pose
+
+        z_axis = real_put_pose[:3, 2]  # 提取 z 轴方向向量
+        current_position = real_put_pose[:3, 3]  # 当前位置
+        new_position = current_position - 0.25 * z_axis
+        real_put_pose[:3, 3] = new_position  # 更新位置
+
+        # 作用补偿值
+        compensation_pose_trans = [compensation_x * 0.001 , compensation_y * 0.001, compensation_z * 0.001, 0, 0, 0]
+        compensation_pose_trans = self.marvin_kine.xyzabc_to_mat4x4(compensation_pose_trans)
+        compensation_pose_rot = [0, 0, 0, compensation_a, compensation_b, compensation_c]
+        compensation_pose_rot = self.marvin_kine.xyzabc_to_mat4x4(compensation_pose_rot)
+        
+        real_put_pose = compensation_pose_trans @ real_put_pose @ compensation_pose_rot  # 全局平移，局部旋转
+        
+
         qt7 = ampl.tf44_to_qt7( np.array(real_put_pose))
         position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
         wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
-        frame_c_name = f"{frame_name}/real_put_pose"
-        frame_real_put_pose = self.ui.server.scene.add_frame(
-            name=frame_c_name,
+        frame_b_name = f"{frame_name}/rough_pose"
+        frame_rough_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
             show_axes=True,  # 显示坐标轴以便调试
             position=position,
             wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
         )
 
-        self.first_assem_put_pose = real_put_pose
+        # 仿真
+        ref_joints = [-44.28, -100.20, 49.30, -103.92, -34.91, -10.60, -71.48]
 
-    # 左臂放置的movel仿真
-    def left_marvin_put_l(self, marvin_driver, marvin_kine):
-        ref_joints = [-14.758271, -118.672726, 87.272366, -45.18, 68.178012, -23.359094, 52.670127]
-
-        end_pose = self.first_assem_put_pose
+        end_pose = real_put_pose
         end_pose[0][3] *= 1000
         end_pose[1][3] *= 1000
         end_pose[2][3] *= 1000
+        end_ik = self.marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
 
-        print(f"end_pose: {end_pose}")
-
-        end_ik = marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
-        print(f"end_ik: {end_ik}")
+        if end_ik is False:
+            print("ik 求解失败")
+            return
+        
         joint_data = end_ik.m_Output_RetJoint.to_list()
-        print(f"joint_data: {joint_data}")
 
         save_path = Path(__file__).parent / "path_cache" / "left_marvin_put_l.txt"
-        success = marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=5, save_path=str(save_path) )
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=20, save_path=str(save_path) )
         if success:
             print("movel 求解成功")
         else:
@@ -1716,6 +2296,7 @@ class UserSession:
                     parsed_data.append(values)
         
         print(f"成功解析 {len(parsed_data)} 行数据")
+        self.first_insert_path = parsed_data # 这样还没有单位转换
         
         # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
         original_count = len(parsed_data)
@@ -1732,14 +2313,21 @@ class UserSession:
             # 按索引顺序排序并提取采样后的数据
             sampled_indices = sorted(sampled_indices)
             parsed_data = [parsed_data[i] for i in sampled_indices]
-            self.put_in_path = parsed_data # 这样还没有单位转换
             # 将每个值从角度转换为弧度
             parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
             print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
 
-        with self.ui.left_marvin_put_view_simulation:
+        with self.ui.first_insert_view_simulation:
+            # 如果已经存在进度条，先删除它
+            if hasattr(self, 'first_insert_view_simulation_slider') and self.first_insert_view_simulation_slider is not None:
+                try:
+                    self.first_insert_view_simulation_slider.remove()
+                    print(f"已删除旧的进度条")
+                except Exception as e:
+                    print(f"删除旧进度条时出错: {e}")
+            
             slider_name = f"用户{self.client.client_id}_轨迹"
-            self.pre_put_moveL_simulation_slider = self.ui.server.gui.add_slider(
+            self.first_insert_view_simulation_slider = self.ui.server.gui.add_slider(
                 slider_name,
                 min=0.0,
                 max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
@@ -1748,7 +2336,7 @@ class UserSession:
             )
             
             # 为进度条设置事件处理（槽函数）
-            @self.pre_put_moveL_simulation_slider.on_update
+            @self.first_insert_view_simulation_slider.on_update
             def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
                 """当进度条值变化时，更新仿真状态"""
                 step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
@@ -1768,28 +2356,651 @@ class UserSession:
             save_path.unlink()
             print(f"已删除临时文件: {save_path}")
 
-    # 左臂放置的进近实机的执行
-    def left_marvin_put_in(self, marvin_driver):
-        if self.put_in_path is None:
-            print("放置的movel路径为空")
+    def first_insert_real_do(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        print(f"已为用户 {self.client.client_id} 实机执行Marvin左臂预抓取到预装配位置")
+        if self.first_insert_path is None:
+            print("预抓取到预装配的movel路径为空")
             return
 
-        for joint_config in self.put_in_path:
+        for joint_config in self.first_insert_path:
             marvin_driver.clear_set()
             joint_cmd_1=joint_config
             marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
             marvin_driver.send_cmd()
             time.sleep(0.02)  #预留运动时间
 
-    # 左臂放置的退出的实机的执行
-    def left_marvin_put_out(self, marvin_driver):
-        if self.put_in_path is None:
-            print("放置的movel路径为空")
-            return
+    def first_insert_real_do_inset(self, marvin_driver, current_joint):
+        fk = self.marvin_kine.fk(robot_serial=0, joints=current_joint)
+        print(f"fk: {fk}")
+        
+        # 获取 fk 的 Z 轴方向
+        fk_matrix = np.array(fk, dtype=np.float64)
+        fk_z_axis = fk_matrix[:3, 2]  # fk 的 Z 轴方向向量
+        fk_position = fk_matrix[:3, 3]  # fk 的位置
+        
+        # 将 Z 轴投影到 XZ 平面（Y 分量设为 0）
+        fk_z_axis_xz = np.array([fk_z_axis[0], 0, fk_z_axis[2]])
+        
+        # 归一化方向向量
+        norm = np.linalg.norm(fk_z_axis_xz)
+        if norm > 1e-6:  # 避免除零
+            direction_xz = fk_z_axis_xz / norm
+        else:
+            # 如果投影向量为零，使用默认方向（例如 Z 轴正方向）
+            direction_xz = np.array([0.0, 0.0, 1.0])
+        
+        # 进近 20 毫米（沿着 Z 轴投影方向的正方向）
+        move_distance = 30.0
+        new_position = fk_position + move_distance * direction_xz
+        
+        # 创建新的 pose，保持旋转不变，只更新位置
+        new_pose = np.array(fk, dtype=np.float64).copy()
+        new_pose[:3, 3] = new_position
+        
+        # 绕自己的 X 轴正转 1 度
+        x_axis = new_pose[:3, 0]  # 提取 X 轴方向向量
+        rotation_angle = math.radians(6)  # 1 度转换为弧度
+        rotation_matrix = self.rotation_matrix_from_axis_angle(x_axis, rotation_angle)
+        new_pose[:3, :3] = new_pose[:3, :3] @ rotation_matrix
 
-        for joint_config in self.put_in_path[::-1]:
+        ik = self.marvin_kine.ik(robot_serial=0, pose_mat=new_pose, ref_joints=current_joint)
+        if ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = ik.m_Output_RetJoint.to_list()
+        print(f"joint_data: {joint_data}")
+
+        save_path = Path(__file__).parent / "path_cache" / "cha.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=current_joint, end_joints=joint_data, vel=5, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.first_cha_path = parsed_data # 这样还没有单位转换
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+        
+        for joint_config in self.first_cha_path:
             marvin_driver.clear_set()
             joint_cmd_1=joint_config
             marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
             marvin_driver.send_cmd()
-            time.sleep(0.02)  #预留运动时间  
+            time.sleep(0.02)  #预留运动时间
+
+    def first_insert_real_do_inset_reverse(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+        
+        for joint_config in self.first_cha_path[::-1]:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+
+    # 分割线------------------------------------------------------------------------------------------------
+    # 天机的第二次插入的任务-------------------------------------------------------------------
+    def second_inseet_capture(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='B',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='B',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[ 7.81, 40.31, 26.71, -108.72, 72.44, 37.23, 70.91 ]
+        marvin_driver.set_joint_cmd_pose(arm='B',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(3) #预留运动时间
+
+    def second_insert_icp(self, marvin_driver, marvin_kine):
+        self.right_marvin_home(marvin_driver)
+
+        MASH_URL = "http://192.168.1.192:8000/api/latestpcdfull"
+        response = requests.get(MASH_URL)
+        print(f"response: {response.json()}")
+        pcd_url = response.json()["pcd_full_url"]
+        
+        # 下载 pcd 文件到本地
+        local_pcd_path = Path(__file__).parent / "camera_cache" / "icp" / "second_ply.ply"
+        local_pcd_path.parent.mkdir(parents=True, exist_ok=True)  # 确保目录存在
+        try:
+            pcd_response = requests.get(pcd_url, timeout=30)
+            pcd_response.raise_for_status()  # 如果状态码不是200会抛出异常
+            
+            with open(local_pcd_path, 'wb') as f:
+                f.write(pcd_response.content)
+            print(f"成功下载 pcd 文件到: {local_pcd_path}")
+        except requests.exceptions.RequestException as e:
+            print(f"下载 pcd 文件失败: {e}")
+            raise
+        
+
+        pcd_url = pcd_url.replace("full", "contours")
+        print(f"pcd_url: {pcd_url}")
+    
+
+
+        # 这个姿态是用来对齐的
+        ref_raw_locolizaiton = [[ 0.0604984,  -0.93006277, -0.36238599,  0.32070565],
+                                [-0.98920423, -0.00731779, -0.14636077,  0.0604595 ],
+                                [ 0.13347296,  0.36732817, -0.92046458,  0.64263827],
+                                [ 0.,          0.,          0.,          1.        ]]
+
+        cali_path = Path(__file__).parent / "camera_cache" / "icp" / "handeye_hand.npy"
+        cali_matrix = np.load(cali_path)
+
+        print(f'cali_matrix: {cali_matrix}')
+
+        # 调用ICP配准服务获取变换矩阵
+        raw_locolizaiton = self.get_icp_transformation(
+            pcd_url=pcd_url,
+            mesh_url="http://192.168.1.206:9000/storage/dualp/second_insert.ply"
+        )
+
+        print(f'raw_locolizaiton: {raw_locolizaiton}')
+        
+        # 如果服务调用失败，使用默认的硬编码值作为后备
+        if raw_locolizaiton is None:
+            print("使用默认的 raw_locolizaiton 矩阵")
+            raw_locolizaiton = None
+
+
+        raw_locolizaiton = np.array(raw_locolizaiton)
+        print(f'raw_locolizaiton: {raw_locolizaiton}')
+        
+        if raw_locolizaiton is None:
+            print("raw_locolizaiton 为空")
+            return
+
+        # 计算矩阵的逆
+        raw_locolizaiton_inv = np.linalg.inv(raw_locolizaiton)
+        print(f'raw_locolizaiton_inv: {raw_locolizaiton_inv}')
+
+        camera_pose = marvin_kine.xyzabc_to_mat4x4(([139.81 * 0.001, 123.31 * 0.001, 463.14 * 0.001, 124.46, 14.82, 76.66]))
+
+        last_raw_locolizaiton =  camera_pose @ cali_matrix @ raw_locolizaiton_inv
+        last_camera_pose =  camera_pose @ cali_matrix
+
+
+        robot_frame = self.robot_frames["right_tianji"]
+        frame_name = robot_frame.name
+        
+        # 获取 robot_frame 的变换矩阵
+        frame_transform_matrix = self.get_frame_transform_matrix(robot_frame)
+        print(f"robot_frame 变换矩阵:\n{frame_transform_matrix}")
+
+        # model_in_base_ref = frame_transform_matrix @ camera_pose @ cali_matrix @ np.linalg.inv(ref_raw_locolizaiton)
+        model_in_base_now = frame_transform_matrix @ last_raw_locolizaiton
+        # model_in_base_now = self.align_model_transform_in_base(model_in_base_ref, model_in_base_now)
+        print(f"model_in_base_now: {model_in_base_now}")
+        last_raw_locolizaiton = np.linalg.inv(frame_transform_matrix) @ model_in_base_now
+
+
+        qt7 = ampl.tf44_to_qt7( np.array(last_raw_locolizaiton))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_a_name = f"{frame_name}/model_second_insert"
+        frame_a = self.ui.server.scene.add_frame(
+            name=frame_a_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
+        )       
+
+        # 将三角网格添加到frame A下
+        ply_path = "/home/daidai/FlashRoboOrch/tests/data/zhuaqu_pcd/second_insert.ply"
+        vertices, faces = ampl.read_trimesh(ply_path)
+        print(f"vertices shape: {vertices.shape}")
+        print(f"faces shape: {faces.shape}")
+        vertices = vertices * 0.001  # 将每个顶点的位置值乘以 0.001（从毫米转换为米）
+            
+        mesh_name = f"{frame_a_name}/icp_second_insert"
+        self.ui.server.scene.add_mesh_simple(
+            name=mesh_name,
+            vertices=vertices,
+            faces=faces,
+        )
+        print(f"三角网格已添加到frame A下: {mesh_name}")
+
+        qt7 = ampl.tf44_to_qt7( np.array(last_camera_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/model_mask_second_insert"
+        frame_b = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=False,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+        )
+
+        ply_path = local_pcd_path
+        pcd_v, pcd_c, _ = ampl.read_pointcloud(ply_path)
+        pcd_v = pcd_v * 0.001  # 将每个点的位置值乘以 0.001
+        mesh_name = f"{frame_b_name}/icp_2"
+        self.ui.server.scene.add_point_cloud(
+            name=mesh_name,
+            points=pcd_v,
+            colors=pcd_c,
+            point_size=0.001,  # 点的大小
+        )
+        print(f"点云已添加到frame B下: {mesh_name}")    
+    
+
+        # 这个是在urdf下的坐标系下的变换了
+        self.second_insert_pose = frame_transform_matrix @ last_raw_locolizaiton
+
+    def second_insert_get_object(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[ -48.41,65.71, 74.67, -38.62, 78.14, -30.19, 0 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        self.wait_for_low_speed_flag(marvin_driver)
+
+        self.left_marvin_grip(marvin_driver)
+        time.sleep(1)
+
+        marvin_driver.clear_set()
+        joint_cmd_1=[-55.17, -60.51, 52.43, -86.72, -49.31, -21.88, -46.86 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(5) #预留运动时间
+
+    def second_insert_back_object(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+        time.sleep(0.5)
+        
+        marvin_driver.clear_set()
+        joint_cmd_1=[-55.17, -60.51, 52.43, -86.72, -49.31, -21.88, -46.86 ]
+        marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+        marvin_driver.send_cmd()
+        time.sleep(5) #预留运动时间
+    
+    def second_insert_sim(self, marvin_driver, marvin_kine):
+         # 从 UI 读取补偿值并转换为 float
+        compensation_x = float(self.ui.second_insert_compensation_x.value)
+        compensation_y = float(self.ui.second_insert_compensation_y.value)
+        compensation_z = float(self.ui.second_insert_compensation_z.value)
+        compensation_a = float(self.ui.second_insert_compensation_a.value)
+        compensation_b = float(self.ui.second_insert_compensation_b.value)
+        compensation_c = float(self.ui.second_insert_compensation_c.value)
+
+        compensation_wp_x = float(self.ui.second_insert_compensation_wp_x.value)
+        compensation_wp_y = float(self.ui.second_insert_compensation_wp_y.value)
+        compensation_wp_z = float(self.ui.second_insert_compensation_wp_z.value)
+        print(f"读取补偿值: 全局X={compensation_x} mm, 全局Y={compensation_y} mm, 全局Z={compensation_z} mm, "
+              f"TCP的A={compensation_a}°, TCP的B={compensation_b}°, TCP的C={compensation_c}°, "
+              f"工件坐标系的X={compensation_wp_x} mm, 工件坐标系的Y={compensation_wp_y} mm, 工件坐标系的Z={compensation_wp_z} mm")
+        
+        # 这个是预示教的位置
+        pre_put_pose = [ 460.12 * 0.001, -85.12 * 0.001, 110.68 * 0.001, 129.20, 37.89, -173.22]
+        pre_put_pose = self.marvin_kine.xyzabc_to_mat4x4(pre_put_pose)
+
+        robot_frame = self.robot_frames["left_tianji"]
+        frame_name = robot_frame.name
+
+        left_base = self.get_frame_transform_matrix(robot_frame)
+        qt7 = ampl.tf44_to_qt7( np.array(pre_put_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/second_insert_ref_put_pose"
+        frame_pre_zhua_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
+        )
+        
+        # 这里生成粗定位的姿态
+        R = np.array([[  0.0000000, -0.7071068, -0.7071068],
+                      [  0.0000000,  0.7071068, -0.7071068],
+                      [  1.0000000,  0.0000000,  0.0000000 ]])
+
+        # R = np.eye(3)
+
+        t = np.array([0.155541, 0.03, 0.016])
+
+        T1 = np.eye(4)
+        T1[:3, :3] = R
+        T1[:3, 3] = t
+
+        origin_insert_pose = self.second_insert_pose
+
+        # 这里就是作用全部补偿的地方， 包括工件坐标系的旋转和平移
+        compensation_wp_pose = [compensation_wp_x * 0.001, compensation_wp_y * 0.001, compensation_wp_z * 0.001, 0, 0, 0]
+        compensation_wp_pose = self.marvin_kine.xyzabc_to_mat4x4(compensation_wp_pose)
+        real_put_pose =  origin_insert_pose @compensation_wp_pose @ T1
+        real_put_pose = np.linalg.inv(left_base) @ real_put_pose
+
+        z_axis = real_put_pose[:3, 2]  # 提取 z 轴方向向量
+        current_position = real_put_pose[:3, 3]  # 当前位置
+        new_position = current_position - 0.25 * z_axis
+        real_put_pose[:3, 3] = new_position  # 更新位置
+
+        # 作用补偿值
+        compensation_pose_trans = [compensation_x * 0.001 , compensation_y * 0.001, compensation_z * 0.001, 0, 0, 0]
+        compensation_pose_trans = self.marvin_kine.xyzabc_to_mat4x4(compensation_pose_trans)
+        compensation_pose_rot = [0, 0, 0, compensation_a, compensation_b, compensation_c]
+        compensation_pose_rot = self.marvin_kine.xyzabc_to_mat4x4(compensation_pose_rot)
+        
+        real_put_pose = compensation_pose_trans @ real_put_pose @ compensation_pose_rot  # 全局平移，局部旋转
+
+        qt7 = ampl.tf44_to_qt7( np.array(real_put_pose))
+        position = (float(qt7[4]), float(qt7[5]), float(qt7[6]))
+        wxyz = (float(qt7[3]), float(qt7[0]), float(qt7[1]), float(qt7[2]))
+        frame_b_name = f"{frame_name}/second_insert_rough_pose"
+        frame_rough_pose = self.ui.server.scene.add_frame(
+            name=frame_b_name,
+            show_axes=True,  # 显示坐标轴以便调试
+            position=position,
+            wxyz=wxyz,
+            axes_length=0.1,
+            axes_radius=0.01,
+        )
+
+        # 仿真
+        ref_joints = [-55.17, -60.51, 52.43, -86.72, -49.31, -21.88, -46.86]
+
+        end_pose = real_put_pose
+        end_pose[0][3] *= 1000
+        end_pose[1][3] *= 1000
+        end_pose[2][3] *= 1000
+        end_ik = self.marvin_kine.ik(robot_serial=0,pose_mat=end_pose, ref_joints=ref_joints)
+        # return
+        if end_ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = end_ik.m_Output_RetJoint.to_list()
+
+        save_path = Path(__file__).parent / "path_cache" / "second_insert_path.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=ref_joints, end_joints=joint_data, vel=20, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.second_insert_path = parsed_data # 这样还没有单位转换
+        
+        # 对parsed_data进行采样：保留第一个、最后一个，以及每100个取一个
+        original_count = len(parsed_data)
+        if len(parsed_data) > 0:
+            sampled_indices = set()
+            # 保留第一个
+            sampled_indices.add(0)
+            # 保留最后一个
+            sampled_indices.add(len(parsed_data) - 1)
+            # 每100个取一个
+            for i in range(100, len(parsed_data) - 1, 100):
+                sampled_indices.add(i)
+            
+            # 按索引顺序排序并提取采样后的数据
+            sampled_indices = sorted(sampled_indices)
+            parsed_data = [parsed_data[i] for i in sampled_indices]
+            # 将每个值从角度转换为弧度
+            parsed_data = [[math.radians(val) for val in row] for row in parsed_data]
+            print(f"采样后保留 {len(parsed_data)} 个数据点（原始数据: {original_count} 行），已转换为弧度")
+
+        with self.ui.second_insert_view_simulation:
+            # 如果已经存在进度条，先删除它
+            if hasattr(self, 'second_insert_view_simulation_slider') and self.second_insert_view_simulation_slider is not None:
+                try:
+                    self.second_insert_view_simulation_slider.remove()
+                    print(f"已删除旧的进度条")
+                except Exception as e:
+                    print(f"删除旧进度条时出错: {e}")
+            
+            slider_name = f"用户{self.client.client_id}_轨迹"
+            self.second_insert_view_simulation_slider = self.ui.server.gui.add_slider(
+                slider_name,
+                min=0.0,
+                max=len(parsed_data) - 1,  # 最大值为轨迹长度减1（因为索引从0开始）
+                step=1,
+                initial_value=0,
+            )
+            
+            # 为进度条设置事件处理（槽函数）
+            @self.second_insert_view_simulation_slider.on_update
+            def on_slider_update(event: viser.GuiEvent[viser.GuiSliderHandle]):
+                """当进度条值变化时，更新仿真状态"""
+                step_index = int(event.target.value)  # 进度条的值直接对应轨迹索引
+                num_steps = len(parsed_data)
+                step_index = max(0, min(step_index, num_steps - 1))
+                joint_config = parsed_data[step_index]
+                self.update_robot_visualization(
+                    "left_tianji", 
+                    joint_config,
+                    update_sliders=True,
+                    update_end_effector_state=True
+                )
+        print(f"已为用户 {self.client.client_id} 创建仿真进度条，轨迹长度: {len(parsed_data)}")
+        
+        # 函数结束后删除临时文件
+        if save_path.exists():
+            save_path.unlink()
+            print(f"已删除临时文件: {save_path}")
+
+    def second_insert_real_do(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+        
+        for pose in self.second_insert_path:
+            marvin_driver.clear_set()
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=pose)
+            marvin_driver.send_cmd()
+            time.sleep(0.02) #预留运动时间
+
+    def second_insert_real_do_inset(self, marvin_driver, current_joint):
+        print(f"current_joint: {current_joint}")
+        fk = self.marvin_kine.fk(robot_serial=0, joints=current_joint)
+        print(f"fk: {fk}")
+        
+        # 获取 fk 的 Z 轴方向
+        fk_matrix = np.array(fk, dtype=np.float64)
+        fk_z_axis = fk_matrix[:3, 2]  # fk 的 Z 轴方向向量
+        fk_position = fk_matrix[:3, 3]  # fk 的位置
+        
+        # 将 Z 轴投影到 XZ 平面（Y 分量设为 0）
+        fk_z_axis_xz = np.array([fk_z_axis[0], 0, fk_z_axis[2]])
+        
+        # 归一化方向向量
+        norm = np.linalg.norm(fk_z_axis_xz)
+        if norm > 1e-6:  # 避免除零
+            direction_xz = fk_z_axis_xz / norm
+        else:
+            # 如果投影向量为零，使用默认方向（例如 Z 轴正方向）
+            direction_xz = np.array([0.0, 0.0, 1.0])
+        
+        # 进近 20 毫米（沿着 Z 轴投影方向的正方向）
+        move_distance = 20.0
+        new_position = fk_position + move_distance * direction_xz
+        
+        # 创建新的 pose，保持旋转不变，只更新位置
+        new_pose = np.array(fk, dtype=np.float64).copy()
+        new_pose[:3, 3] = new_position
+
+        ik = self.marvin_kine.ik(robot_serial=0, pose_mat=new_pose, ref_joints=current_joint)
+        if ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = ik.m_Output_RetJoint.to_list()
+        print(f"joint_data: {joint_data}")
+
+        save_path = Path(__file__).parent / "path_cache" / "cha_2.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=current_joint, end_joints=joint_data, vel=5, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.second_cha_path = parsed_data # 这样还没有单位转换
+
+
+         # 绕自己的 X 轴正转 1 度
+        rotation_angle = 20  # 1 度转换为弧度
+        rotation_matrix = self.marvin_kine.xyzabc_to_mat4x4([0, 0, 0, rotation_angle, 0, 0])
+        new_pose = new_pose @ rotation_matrix
+        new_pose[1][3] += 10.0  # 全局的Z继续向下
+        ik = self.marvin_kine.ik(robot_serial=0, pose_mat=new_pose, ref_joints=current_joint)
+        if ik is False:
+            print("ik 求解失败")
+            return
+        
+        joint_data = ik.m_Output_RetJoint.to_list()
+        print(f"joint_data: {joint_data}")
+
+        save_path = Path(__file__).parent / "path_cache" / "cha_2.txt"
+        success = self.marvin_kine.movL_KeepJ( robot_serial=0, start_joints=self.second_cha_path[-1], end_joints=joint_data, vel=20, save_path=str(save_path) )
+        if success:
+            print("movel 求解成功")
+        else:
+            print("movel 求解失败")
+
+        # 解析txt文件，提取每一行的前7个数值（X, Y, Z, A, B, C, U）
+        parsed_data = []
+        with open(save_path, 'r') as f:
+            lines = f.readlines()
+            # 跳过第一行（PoinType=9@6557），从第二行开始解析
+            for line in lines[1:]:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # 使用正则表达式提取 X, Y, Z, A, B, C, U 的值
+                pattern = r'X\s+([-+]?\d+\.?\d*)\$Y\s+([-+]?\d+\.?\d*)\$Z\s+([-+]?\d+\.?\d*)\$A\s+([-+]?\d+\.?\d*)\$B\s+([-+]?\d+\.?\d*)\$C\s+([-+]?\d+\.?\d*)\$U\s+([-+]?\d+\.?\d*)'
+                match = re.search(pattern, line)
+                if match:
+                    values = [float(match.group(i)) for i in range(1, 8)]
+                    parsed_data.append(values)
+        
+        print(f"成功解析 {len(parsed_data)} 行数据")
+        self.second_cha_path_2 = parsed_data
+
+
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+        
+        for joint_config in self.second_cha_path:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+
+        self.wait_for_low_speed_flag(marvin_driver)
+
+        for joint_config in self.second_cha_path_2:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+
+        # self.wait_for_low_speed_flag(marvin_driver)
+
+    def second_insert_real_do_inset_reverse(self, marvin_driver):
+        marvin_driver.clear_set()
+        marvin_driver.set_state(arm='A',state = 1) # 位置跟随模式
+        marvin_driver.set_vel_acc(arm='A',velRatio=20, AccRatio=10)
+        marvin_driver.send_cmd()
+
+
+        for joint_config in self.second_cha_path_2[::-1]:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
+
+        self.wait_for_low_speed_flag(marvin_driver)
+
+        for joint_config in self.second_cha_path[::-1]:
+            marvin_driver.clear_set()
+            joint_cmd_1=joint_config
+            marvin_driver.set_joint_cmd_pose(arm='A',joints=joint_cmd_1)
+            marvin_driver.send_cmd()
+            time.sleep(0.02)  #预留运动时间
